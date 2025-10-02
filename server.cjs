@@ -26,8 +26,69 @@ server.use(cors({
   origin: process.env.FRONTEND_URL || '*',
   credentials: true
 }));
+
+// USE this CORS CONFIG Later
+
+// // CORS configuration
+// const corsOptions = {
+//   origin: function (origin, callback) {
+//     const allowedOrigins = [
+//       'http://localhost:3000',
+//       'http://localhost:5001',
+//       'https://microtrax.netlify.app',
+//       "https://servers4sqldb.uc.r.appspot.com",
+//       "https://orca-app-j32vd.ondigitalocean.app",
+//       "https://monkfish-app-mllt8.ondigitalocean.app/",
+//       "*"
+//       // Add any other origins you want to allow
+//     ];
+//     if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+//       callback(null, true);
+//     } else {
+//       callback(new Error('Not allowed by CORS'));
+//     }
+//   },
+//   credentials: true,
+//   optionsSuccessStatus: 200
+// };
+
+// server.use(cors(corsOptions));
+// server.use(express.json());
+
+
 server.use(express.json({ limit: '10mb' }));
 server.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Admin Dashboard Page
+// // Data storage for admin page
+// let pageVisits = [];
+// let recentRequests = [];
+// const startTime = Date.now();
+
+// // Middleware to track page visits and requests
+// server.use((req, res, next) => {
+//   const ip = req.ip || req.connection.remoteAddress;
+//   const geo = geoip.lookup(ip);
+//   const visit = {
+//     count: pageVisits.length + 1,
+//     url: req.originalUrl,
+//     time: new Date().toISOString(),
+//     ip: ip,
+//     location: geo ? `${geo.city}, ${geo.country}` : 'Unknown'
+//   };
+//   pageVisits.push(visit);
+
+//   const request = {
+//     method: req.method,
+//     url: req.originalUrl,
+//     time: new Date().toISOString(),
+//     ip: ip
+//   };
+//   recentRequests.unshift(request);
+//   if (recentRequests.length > 20) recentRequests.pop();
+
+//   next();
+// });
 
 // Request logging middleware
 server.use((req, res, next) => {
@@ -255,6 +316,56 @@ server.post('/api/auth/register', async (req, res) => {
   }
 });
 
+// Email verification 
+// email-service.js
+const nodemailer = require('nodemailer');
+
+// Configure nodemailer with your SMTP settings
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST || 'smtp.example.com',
+  port: process.env.SMTP_PORT || 587,
+  secure: process.env.SMTP_SECURE === 'true',
+  auth: {
+    user: process.env.SMTP_USER || 'your-email@example.com',
+    pass: process.env.SMTP_PASS || 'your-password'
+  }
+});
+
+// Send password reset email
+async function sendPasswordResetEmail(email, username, newPassword) {
+  try {
+    const mailOptions = {
+      from: process.env.EMAIL_FROM || '"Admin System" <admin@example.com>',
+      to: email,
+      subject: 'Your Password Has Been Reset',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 5px;">
+          <h2 style="color: #333;">Password Reset</h2>
+          <p>Hello ${username},</p>
+          <p>Your password has been reset by an administrator.</p>
+          <p>Your new password is: <strong>${newPassword}</strong></p>
+          <p>Please login with this password and change it immediately for security reasons.</p>
+          <p style="margin-top: 30px; padding-top: 15px; border-top: 1px solid #e0e0e0; font-size: 12px; color: #777;">
+            This is an automated message. Please do not reply to this email.
+          </p>
+        </div>
+      `
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log('Password reset email sent:', info.messageId);
+    return true;
+  } catch (error) {
+    console.error('Error sending password reset email:', error);
+    throw error;
+  }
+}
+
+module.exports = {
+  sendPasswordResetEmail
+};
+
+
 // Custom logout route
 server.post('/api/auth/logout', async (req, res) => {
   try {
@@ -282,7 +393,7 @@ server.post('/api/auth/logout', async (req, res) => {
 });
 
 // Custom wallet balance route
-server.get('/api/wallet/balance', async (req, res) => {
+server.get('/api/wallet/balance: username ', async (req, res) => {
   try {
     const username = req.query.username || 'user_123'; // Default for demo
 
@@ -321,12 +432,28 @@ server.post('/api/unlock/:keyId', async (req, res) => {
   try {
     const keyId = req.params.keyId;
 
+    const {username} = req.body;
+
     const [keys] = await pool.execute(
       'SELECT * FROM createdKeys WHERE id = ?',
       [parseInt(keyId)]
     );
-
+    
     const key = keys[0];
+
+    const [users] = await pool.execute(
+      'SELECT * FROM userData WHERE username = ?',
+      [username]
+    );
+
+    const user = users[0];
+    
+    const [wallets] = await pool.execute(
+      'SELECT * FROM wallet WHERE username = ?',
+      [username]
+    );
+
+    const wallet = wallets[0];
 
     if (key && key.available > 0) {
       // Simulate random key from available pool
@@ -344,6 +471,12 @@ server.post('/api/unlock/:keyId', async (req, res) => {
         [parseInt(keyId)]
       );
 
+       // Update wallets
+       await pool.execute(
+        'UPDATE wallet SET credits = credits - ? WHERE username = ?',
+        [key.price, user.username]
+      );
+
       // Create unlock record
       const transactionId = Math.floor(Math.random() * 10000);
 
@@ -351,11 +484,11 @@ server.post('/api/unlock/:keyId', async (req, res) => {
         'INSERT INTO unlocks (transactionId, username, email, date, time, credits, keyId, keyTitle, keyValue, sellerUsername, sellerEmail, price, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [
           transactionId,
-          'user_123', // Demo user
-          'john.buyer@example.com',
+          user.username, // Demo user
+          user.email,
           Date.now(),
           new Date().toLocaleTimeString(),
-          750,
+          user.credits,
           key.keyId,
           key.keyTitle,
           randomKey,
@@ -620,6 +753,84 @@ server.get('/api/redemptions/:username', async (req, res) => {
     );
 
     res.json(redemptions);
+  } catch (error) {
+    console.error('Redemptions error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Custom route for user purchases
+server.post('/api/purchases/:username', async (req, res) => {
+  try {
+    const username = req.params.username;
+
+    const [purchases] = await pool.execute(
+      'SELECT * FROM buyCredits WHERE username = ? ORDER BY date DESC',
+      [username]
+    );
+
+    res.json(purchases);
+  } catch (error) {
+    console.error('Purchases error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Custom route for user redemptions
+server.post('/api/redemptions/:username', async (req, res) => {
+  try {
+    const username = req.params.username;
+    [walletAddress, currency, credits] = req.body;
+    
+    const [users] = await pool.execute(
+      'SELECT * FROM userData WHERE username = ?',
+      [username]
+    );
+
+    const user = users[0];
+
+    const [wallets] = await pool.execute(
+      'SELECT * FROM wallet WHERE username = ?',
+      [username]
+    );
+
+    
+    const wallet = wallets[0];
+
+    // Update availability
+    await pool.execute(
+      'UPDATE wallet SET available = available - ? WHERE username = ?',
+      [credits, username]
+    );
+
+    const [usersCredits] = await pool.execute(
+      'SELECT credits FROM userData WHERE username = ?',
+      [username]
+    );
+
+    const userCredits = usersCredits[0];
+
+    const [redemptions] = await pool.execute(
+      'SELECT * FROM redeemCredits WHERE username = ? ORDER BY date DESC',
+      [username]
+    );
+
+    const [redemption] = await pool.execute(
+      'INSERT INTO redemption (transactionId, username, email, date, time, credits, currency, walletAddress, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        transactionId,
+        user.username, // Demo user
+        user.email,
+        Date.now(),
+        new Date().toLocaleTimeString(),
+        credits,
+        currency,
+        walletAddress,
+        'Pending'
+      ]
+    );
+
+    res.json(redemption);
   } catch (error) {
     console.error('Redemptions error:', error);
     res.status(500).json({ error: 'Database error' });
