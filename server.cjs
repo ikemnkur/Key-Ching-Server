@@ -3,6 +3,7 @@ const express = require('express');
 const mysql = require('mysql2/promise');
 const cors = require('cors');
 const bcrypt = require('bcrypt');
+const { v4: uuidv4 } = require('uuid');
 
 const server = express();
 
@@ -109,36 +110,36 @@ server.get('/health', (req, res) => {
 // Custom authentication route
 server.post('/api/auth/login', async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const { email, password } = req.body;
 
     // Validate input
-    if (!username || !password) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Username and password are required' 
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email and password are required'
       });
     }
 
     const [users] = await pool.execute(
-      'SELECT * FROM userData WHERE username = ?',
-      [username]
+      'SELECT * FROM userData WHERE email = ?',
+      [email]
     );
 
     const user = users[0];
 
     if (!user) {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Invalid credentials' 
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
       });
     }
 
     // Check if user is banned
     if (user.isBanned) {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Account is banned', 
-        banReason: user.banReason 
+      return res.status(403).json({
+        success: false,
+        message: 'Account is banned',
+        banReason: user.banReason
       });
     }
 
@@ -151,10 +152,10 @@ server.post('/api/auth/login', async (req, res) => {
 
       // Update last login with proper MySQL datetime format
       const currentDateTime = new Date().toISOString().slice(0, 19).replace('T', ' ');
-      
+
       await pool.execute(
-        'UPDATE userData SET loginStatus = true, lastLogin = ? WHERE username = ?',
-        [currentDateTime, username]
+        'UPDATE userData SET loginStatus = true, lastLogin = ? WHERE email = ?',
+        [currentDateTime, email]
       );
 
       // Generate a proper JWT-like token (in production, use actual JWT)
@@ -167,16 +168,124 @@ server.post('/api/auth/login', async (req, res) => {
         message: 'Login successful'
       });
     } else {
-      res.status(401).json({ 
-        success: false, 
-        message: 'Invalid credentials' 
+      res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
       });
     }
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Server error occurred during login' 
+    res.status(500).json({
+      success: false,
+      message: 'Server error occurred during login'
+    });
+  }
+});
+
+// Custom fetch account details route
+server.post('/api/user', async (req, res) => {
+  console.log("Fetching user details...");
+  try {
+    const { email, username, password } = req.body;
+//  console.log("User found:", user.username);
+    // Validate input
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email and password are required'
+      });
+    }
+
+    const [users] = await pool.execute(
+      'SELECT * FROM userData WHERE email = ?',
+      [email]
+    );
+
+    const user = users[0];
+    let earnings = [];
+    let unlocks = [];
+
+    if (user.accountType == 'seller') {
+      const [earnings_db] = await pool.execute(
+        'SELECT * FROM earnings WHERE username = ?',
+        [username]
+      );
+      earnings = earnings_db;
+    } else {
+      const [unlocks_db] = await pool.execute(
+        'SELECT * FROM unlocks WHERE email = ?',
+        [email]
+      );
+      unlocks = unlocks_db;
+    }
+
+
+    // const unlock = unlocks[0];
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
+      });
+    }
+
+    // Check if user is banned
+    if (user.isBanned) {
+      return res.status(403).json({
+        success: false,
+        message: 'Account is banned',
+        banReason: user.banReason
+      });
+    }
+   
+
+    // Compare password with hash
+    const isValidPassword = await bcrypt.compare(password, user.passwordHash);
+
+    if (isValidPassword) {
+      const userData = { ...user };
+      delete userData.passwordHash; // Don't send password hash
+
+      // Update last login with proper MySQL datetime format
+      // const currentDateTime = new Date().toISOString().slice(0, 19).replace('T', ' ');
+
+      // await pool.execute(
+      //   'UPDATE userData SET loginStatus = true, lastLogin = ? WHERE email = ?',
+      //   [currentDateTime, email]
+      // );
+
+      // Generate a proper JWT-like token (in production, use actual JWT)
+      // const token = Buffer.from(`${user.id}_${Date.now()}_${Math.random()}`).toString('base64');
+
+      if (user.accountType === 'seller') {
+        res.json({
+          success: true,
+          user: userData,
+          earnings: earnings,
+          // token: token,
+          message: 'Login successful'
+        });
+      } else {
+        res.json({
+          success: true,
+          user: userData,
+          unlocks: unlocks,
+          // token: token,
+          message: 'Login successful'
+        });
+      }
+
+    } else {
+      res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
+      });
+    }
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error occurred during login'
     });
   }
 });
@@ -188,9 +297,9 @@ server.post('/api/auth/register', async (req, res) => {
 
     // Validate required fields
     if (!username || !email || !password || !firstName) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Username, email, password, and first name are required' 
+      return res.status(400).json({
+        success: false,
+        message: 'Username, email, password, and first name are required'
       });
     }
 
@@ -201,9 +310,9 @@ server.post('/api/auth/register', async (req, res) => {
     );
 
     if (existingUsers.length > 0) {
-      return res.status(409).json({ 
-        success: false, 
-        message: 'Username or email already exists' 
+      return res.status(409).json({
+        success: false,
+        message: 'Username or email already exists'
       });
     }
 
@@ -293,6 +402,8 @@ server.post('/api/auth/register', async (req, res) => {
       ]
     );
 
+
+
     // Generate token for automatic login
     const token = Buffer.from(`${userId}_${Date.now()}_${Math.random()}`).toString('base64');
 
@@ -309,9 +420,9 @@ server.post('/api/auth/register', async (req, res) => {
 
   } catch (error) {
     console.error('Registration error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Server error occurred during registration' 
+    res.status(500).json({
+      success: false,
+      message: 'Server error occurred during registration'
     });
   }
 });
@@ -385,17 +496,22 @@ server.post('/api/auth/logout', async (req, res) => {
     });
   } catch (error) {
     console.error('Logout error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Server error occurred during logout' 
+    res.status(500).json({
+      success: false,
+      message: 'Server error occurred during logout'
     });
   }
 });
 
 // Custom wallet balance route
-server.get('/api/wallet/balance: username ', async (req, res) => {
+server.get('/api/wallet/balance/:username', async (req, res) => {
   try {
-    const username = req.query.username || 'user_123'; // Default for demo
+    // const username = req.query.username || 'user_123'; // Default for demo
+    const username = req.params.username;
+
+    if (!username) {
+      return res.status(400).json({ error: 'Username is required' });
+    }
 
     const [wallets] = await pool.execute(
       'SELECT * FROM wallet WHERE username = ?',
@@ -432,13 +548,13 @@ server.post('/api/unlock/:keyId', async (req, res) => {
   try {
     const keyId = req.params.keyId;
 
-    const {username} = req.body;
+    const { username } = req.body;
 
     const [keys] = await pool.execute(
       'SELECT * FROM createdKeys WHERE id = ?',
       [parseInt(keyId)]
     );
-    
+
     const key = keys[0];
 
     const [users] = await pool.execute(
@@ -447,13 +563,13 @@ server.post('/api/unlock/:keyId', async (req, res) => {
     );
 
     const user = users[0];
-    
-    const [wallets] = await pool.execute(
-      'SELECT * FROM wallet WHERE username = ?',
-      [username]
-    );
 
-    const wallet = wallets[0];
+    // const [wallets] = await pool.execute(
+    //   'SELECT * FROM wallet WHERE username = ?',
+    //   [username]
+    // );
+
+    // const wallet = wallets[0];
 
     if (key && key.available > 0) {
       // Simulate random key from available pool
@@ -471,14 +587,16 @@ server.post('/api/unlock/:keyId', async (req, res) => {
         [parseInt(keyId)]
       );
 
-       // Update wallets
-       await pool.execute(
-        'UPDATE wallet SET credits = credits - ? WHERE username = ?',
-        [key.price, user.username]
-      );
+      if (user.credits >= key.price) {
+        // Update wallets
+        await pool.execute(
+          'UPDATE userData SET credits = credits - ? WHERE email = ?',
+          [key.price, user.email]
+        );
+      }
 
       // Create unlock record
-      const transactionId = Math.floor(Math.random() * 10000);
+      const transactionId = uuidv4();
 
       await pool.execute(
         'INSERT INTO unlocks (transactionId, username, email, date, time, credits, keyId, keyTitle, keyValue, sellerUsername, sellerEmail, price, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -566,89 +684,236 @@ server.get('/api/notifications/:username', async (req, res) => {
   }
 });
 
+// const fd = new FormData();
+//     fd.append('title', title);
+//     fd.append('price_credits', price);
+//     fd.append('username', userData?.username || 'user_123');
+//     fd.append('email', userData?.email || '');
+//     fd.append('keys_available', keysAvailable);
+//     if (expirationDays) fd.append('expiration_days', expirationDays);
+//     if (description) fd.append('description', description);
+    
+//     if (uploadMethod === 'text' && keyText.trim()) {
+//       const blob = new Blob([keyText], { type: 'text/plain' });
+//       const textFile = new File([blob], 'keys.txt', { type: 'text/plain' });
+//       fd.append('file', textFile);
+//     } else if (file) {
+//       fd.append('file', file);
+//     }
+// const { data } = await api.post('/api/create-key', fd);
+
+
 // Custom route for create key
 server.post('/api/create-key', async (req, res) => {
   try {
-    const { title, price_credits } = req.body;
+    const { 
+      title, 
+      price_credits, 
+      email, 
+      username, 
+      file, 
+      description, 
+      tags, 
+      encryptionKey,
+      keys_available,
+      expiration_days
+    } = req.body;
 
-    // Simulate file processing
-    setTimeout(async () => {
+    console.log('Creating key with data:', { 
+      title, 
+      price_credits, 
+      email, 
+      username, 
+      file, 
+      description, 
+      tags, 
+      encryptionKey,
+      keys_available,
+      expiration_days
+    });
+
+    // Validate required fields
+    if (!title || !price_credits || !file) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Title, price, and keys are required' 
+      });
+    }
+
+    // Process the keys from file content
+    const keysArray = file.split('\n')
+      .map(key => key.trim())
+      .filter(key => key.length > 0);
+
+    if (keysArray.length === 0) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'No valid keys found in the provided content' 
+      });
+    }
+
+    const quantity = keys_available || keysArray.length;
+    
+    // Calculate expiration date if provided
+    let expirationDate = null;
+    if (expiration_days && expiration_days > 0) {
+      const expDate = new Date();
+      expDate.setDate(expDate.getDate() + Number(expiration_days));
+      expirationDate = expDate.toISOString().slice(0, 19).replace('T', ' ');
+    } else {
+      expirationDate = null;
+    }
+
+    // Simulate file processing with a short delay
+    // setTimeout(async () => {
       try {
         const keyId = `key_${Date.now()}`;
-        const quantity = Math.floor(Math.random() * 50) + 10;
+        // Generate a unique id for the primary key (VARCHAR(10))
+        const id = Math.random().toString(36).substring(2, 12).toUpperCase();
 
+        // Process tags
+        let processedTags = [];
+        if (Array.isArray(tags)) {
+          processedTags = tags;
+        } else if (typeof tags === 'string') {
+          processedTags = tags.split(',').map(tag => tag.trim()).filter(tag => tag);
+        }
         await pool.execute(
-          'INSERT INTO createdKeys (keyId, username, email, keyTitle, keyValue, description, price, quantity, sold, available, creationDate, expirationDate, isActive, isReported, reportCount, encryptionKey, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          'INSERT INTO createdKeys (id, keyId, username, email, keyTitle, keyValue, description, price, quantity, sold, available, creationDate, expirationDate, isActive, isReported, reportCount, encryptionKey, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
           [
+            id,
             keyId,
-            'seller_123',
-            'jane.seller@example.com',
+            username || 'demo_seller',
+            email || 'seller@example.com',
             title || 'New Key Listing',
-            `DEMO-KEY-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
-            `Generated key listing: ${title}`,
+            JSON.stringify(keysArray), // Store all keys as JSON array
+            description || 'No description provided.',
             parseInt(price_credits) || 100,
             quantity,
             0,
             quantity,
             Date.now(),
-            null,
+            expirationDate === null ? Date.now()+(24*60*60*1000*expiration_days) : expirationDate,
             true,
             false,
             0,
-            `enc_key_${Date.now()}`,
-            JSON.stringify(['demo', 'uploaded'])
+            encryptionKey || `enc_key_${Date.now()}`,
+            JSON.stringify(processedTags)
           ]
         );
+    
 
         res.json({
           success: true,
           uploadId: keyId,
-          message: 'Keys uploaded successfully'
+          keysProcessed: keysArray.length,
+          message: `Successfully uploaded ${keysArray.length} keys`
         });
       } catch (error) {
-        console.error('Create key error:', error);
-        res.status(500).json({ success: false, message: 'Database error' });
+        console.error('Create key database error:', error);
+        res.status(500).json({ 
+          success: false, 
+          message: 'Database error occurred while creating listing' 
+        });
       }
-    }, 1000);
+    // }, 1000);
   } catch (error) {
     console.error('Create key outer error:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error occurred while processing request' 
+    });
   }
 });
 
+
+// // Custom route for create key
+// server.post('/api/create-key', async (req, res) => {
+//   try {
+//     const { title, price_credits, email, username, file, desrciption, tags, encryptionKey } = req.body;
+
+//     console.log('Creating key with data:', { title, price_credits, email, username, file, desrciption, tags, encryptionKey });
+//     // Simulate file processing
+//     setTimeout(async () => {
+//       try {
+//         const keyId = `key_${Date.now()}`;
+//         const quantity = Math.floor(Math.random() * 50) + 10;
+//         // Generate a unique id for the primary key
+//         const id = Math.random().toString(36).substring(2, 12).toUpperCase();
+
+//         await pool.execute(
+//           'INSERT INTO createdKeys (id, keyId, username, email, keyTitle, keyValue, description, price, quantity, sold, available, creationDate, expirationDate, isActive, isReported, reportCount, encryptionKey, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+//           [
+//             id,
+//             keyId,
+//             username || 'demo_seller',
+//             email || 'jane.seller@example.com',
+//             title || 'New Key Listing',
+//             file,
+//             desrciption || 'No description provided.',
+//             parseInt(price_credits) || 100,
+//             quantity,
+//             0,
+//             quantity,
+//             Date.now(),
+//             null,
+//             true,
+//             false,
+//             0,
+//             encryptionKey || `enc_key_${Date.now()}`,
+//             tags || JSON.stringify(['demo', 'uploaded'])
+//           ]
+//         );
+
+//         res.json({
+//           success: true,
+//           uploadId: keyId,
+//           message: 'Keys uploaded successfully'
+//         });
+//       } catch (error) {
+//         console.error('Create key error:', error);
+//         res.status(500).json({ success: false, message: 'Database error' });
+//       }
+//     }, 1000);
+//   } catch (error) {
+//     console.error('Create key outer error:', error);
+//     res.status(500).json({ success: false, message: 'Server error' });
+//   }
+// });
+
 //  const newUser = {
-        //   loginStatus: true,
-        //   lastLogin: new Date().toISOString(),
-        //   accountType: accountType || 'buyer',
-        //   username: username,
-        //   email: email,
-        //   firstName: name.split(' ')[0] || name,
-        //   lastName: name.split(' ').slice(1).join(' ') || '',
-        //   phoneNumber: '',
-        //   birthDate: birthday,
-        //   encryptionKey: `enc_key_${Date.now()}`,
-        //   credits: 100, // Starting credits
-        //   reportCount: 0,
-        //   isBanned: false,
-        //   banReason: '',
-        //   banDate: null,
-        //   banDuration: null,
-        //   createdAt: Date.now(),
-        //   updatedAt: Date.now(),
-        //   passwordHash: '$2b$10$hashedpassword', // Demo hash
-        //   twoFactorEnabled: false,
-        //   twoFactorSecret: '',
-        //   recoveryCodes: [],
-        //   profilePicture: `https://i.pravatar.cc/150?img=${Math.floor(Math.random() * 70) + 1}`,
-        //   bio: '',
-        //   socialLinks: {
-        //     facebook: '',
-        //     twitter: '',
-        //     instagram: '',
-        //     linkedin: '',
-        //     website: ''
-        //   }
-        // };
+//   loginStatus: true,
+//   lastLogin: new Date().toISOString(),
+//   accountType: accountType || 'buyer',
+//   username: username,
+//   email: email,
+//   firstName: name.split(' ')[0] || name,
+//   lastName: name.split(' ').slice(1).join(' ') || '',
+//   phoneNumber: '',
+//   birthDate: birthday,
+//   encryptionKey: `enc_key_${Date.now()}`,
+//   credits: 100, // Starting credits
+//   reportCount: 0,
+//   isBanned: false,
+//   banReason: '',
+//   banDate: null,
+//   banDuration: null,
+//   createdAt: Date.now(),
+//   updatedAt: Date.now(),
+//   passwordHash: '$2b$10$hashedpassword', // Demo hash
+//   twoFactorEnabled: false,
+//   twoFactorSecret: '',
+//   recoveryCodes: [],
+//   profilePicture: `https://i.pravatar.cc/150?img=${Math.floor(Math.random() * 70) + 1}`,
+//   bio: '',
+//   socialLinks: {
+//     facebook: '',
+//     twitter: '',
+//     instagram: '',
+//     linkedin: '',
+//     website: ''
+//   }
+// };
 
 // // Create user in JSON server
 // const response = await fetch('http://localhost:3001/api/userData', {
@@ -718,9 +983,9 @@ server.post('/api/userData', async (req, res) => {
       ]
     );
     res.json({ success: true, id: userId });
-   
+
   } catch (error) {
-    console.error('Create user error:', error); 
+    console.error('Create user error:', error);
     res.status(500).json({ success: false, message: 'Database error' });
   }
 });
@@ -781,7 +1046,7 @@ server.post('/api/redemptions/:username', async (req, res) => {
   try {
     const username = req.params.username;
     [walletAddress, currency, credits] = req.body;
-    
+
     const [users] = await pool.execute(
       'SELECT * FROM userData WHERE username = ?',
       [username]
@@ -794,7 +1059,7 @@ server.post('/api/redemptions/:username', async (req, res) => {
       [username]
     );
 
-    
+
     const wallet = wallets[0];
 
     // Update availability
