@@ -654,35 +654,193 @@ server.get('/api/seller/listings/:id', async (req, res) => {
   }
 });
 
-// Custom route for all listings
-server.get('/api/listings', async (req, res) => {
+
+// Custom route for user-specific listings
+server.get('/api/listings/:username', async (req, res) => {
   try {
+    const username = req.params.username;
     const [listings] = await pool.execute(
-      'SELECT * FROM createdKeys WHERE isActive = true'
+      'SELECT * FROM createdKeys WHERE username = ? ORDER BY creationDate DESC',
+      [username]
     );
     res.json(listings);
   } catch (error) {
-    console.error('Listings error:', error);
+    console.error('User listings error:', error);
     res.status(500).json({ error: 'Database error' });
   }
 });
 
-// Custom route for user notifications
-server.get('/api/notifications/:username', async (req, res) => {
+// Custom route for editing a key listing
+server.put('/api/listings/:id', async (req, res) => {
   try {
-    const username = req.params.username;
+    const listingId = req.params.id;
+    const { 
+      keyTitle, 
+      description, 
+      price, 
+      tags, 
+      expirationDate,
+      isActive 
+    } = req.body;
 
-    const [notifications] = await pool.execute(
-      'SELECT * FROM notifications WHERE username = ? ORDER BY createdAt DESC',
-      [username]
+    // First, verify the listing exists and get current data
+    const [currentListing] = await pool.execute(
+      'SELECT * FROM createdKeys WHERE id = ?',
+      [listingId]
     );
 
-    res.json(notifications);
+    if (currentListing.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Listing not found' 
+      });
+    }
+
+    const listing = currentListing[0];
+
+    // Prepare update data (only update provided fields)
+    const updateData = {};
+    const updateFields = [];
+    const updateValues = [];
+
+    if (keyTitle !== undefined) {
+      updateData.keyTitle = keyTitle;
+      updateFields.push('keyTitle = ?');
+      updateValues.push(keyTitle);
+    }
+
+    if (description !== undefined) {
+      updateData.description = description;
+      updateFields.push('description = ?');
+      updateValues.push(description);
+    }
+
+    if (price !== undefined) {
+      updateData.price = parseInt(price);
+      updateFields.push('price = ?');
+      updateValues.push(parseInt(price));
+    }
+
+    if (tags !== undefined) {
+      const processedTags = Array.isArray(tags) ? tags : 
+        (typeof tags === 'string' ? tags.split(',').map(tag => tag.trim()).filter(tag => tag) : []);
+      updateData.tags = JSON.stringify(processedTags);
+      updateFields.push('tags = ?');
+      updateValues.push(JSON.stringify(processedTags));
+    }
+
+    if (expirationDate !== undefined) {
+      updateData.expirationDate = expirationDate;
+      updateFields.push('expirationDate = ?');
+      updateValues.push(expirationDate);
+    }
+
+    if (isActive !== undefined) {
+      updateData.isActive = isActive;
+      updateFields.push('isActive = ?');
+      updateValues.push(isActive);
+    }
+
+    if (updateFields.length === 0) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'No valid fields provided for update' 
+      });
+    }
+
+    // Add updatedAt timestamp
+    updateFields.push('updatedAt = ?');
+    updateValues.push(Date.now());
+
+    // Build and execute update query
+    const updateQuery = `UPDATE createdKeys SET ${updateFields.join(', ')} WHERE id = ?`;
+    updateValues.push(listingId);
+
+    await pool.execute(updateQuery, updateValues);
+
+    // Get updated listing
+    const [updatedListing] = await pool.execute(
+      'SELECT * FROM createdKeys WHERE id = ?',
+      [listingId]
+    );
+
+    res.json({
+      success: true,
+      listing: updatedListing[0],
+      message: 'Listing updated successfully'
+    });
+
   } catch (error) {
-    console.error('Notifications error:', error);
-    res.status(500).json({ error: 'Database error' });
+    console.error('Update listing error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Database error occurred while updating listing' 
+    });
   }
 });
+
+// Custom route for deleting a key listing
+server.delete('/api/listings/:id', async (req, res) => {
+  try {
+    const listingId = req.params.id;
+    const { username } = req.body; // For security, verify ownership
+
+    // First, verify the listing exists and check ownership
+    const [listing] = await pool.execute(
+      'SELECT * FROM createdKeys WHERE id = ?',
+      [listingId]
+    );
+
+    if (listing.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Listing not found' 
+      });
+    }
+
+    // Verify ownership (optional security check)
+    if (username && listing[0].username !== username) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'You can only delete your own listings' 
+      });
+    }
+
+    // Check if any keys have been sold
+    if (listing[0].sold > 0) {
+      // If keys have been sold, just deactivate instead of deleting
+      await pool.execute(
+        'UPDATE createdKeys SET isActive = false WHERE id = ?',
+        [listingId]
+      );
+
+      res.json({
+        success: true,
+        message: 'Listing deactivated successfully (some keys were already sold)'
+      });
+    } else {
+      // If no keys sold, completely delete the listing
+      await pool.execute(
+        'DELETE FROM createdKeys WHERE id = ?',
+        [listingId]
+      );
+
+      res.json({
+        success: true,
+        message: 'Listing deleted successfully'
+      });
+    }
+
+  } catch (error) {
+    console.error('Delete listing error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Database error occurred while deleting listing' 
+    });
+  }
+});
+
+
 
 // const fd = new FormData();
 //     fd.append('title', title);
@@ -826,6 +984,22 @@ server.post('/api/create-key', async (req, res) => {
   }
 });
 
+// Custom route for user notifications
+server.get('/api/notifications/:username', async (req, res) => {
+  try {
+    const username = req.params.username;
+
+    const [notifications] = await pool.execute(
+      'SELECT * FROM notifications WHERE username = ? ORDER BY createdAt DESC',
+      [username]
+    );
+
+    res.json(notifications);
+  } catch (error) {
+    console.error('Notifications error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
 
 // // Custom route for create key
 // server.post('/api/create-key', async (req, res) => {
