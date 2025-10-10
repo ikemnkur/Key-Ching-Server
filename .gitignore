@@ -27,3 +27,6 @@ dist-ssr
 service-accounts/*.json
 
 .env
+
+service-account.json
+
