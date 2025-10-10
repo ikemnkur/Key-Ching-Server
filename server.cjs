@@ -41,6 +41,7 @@ const corsOptions = {
       "https://orca-app-j32vd.ondigitalocean.app",
       "https://monkfish-app-mllt8.ondigitalocean.app/",
       "http://localhost:5173",
+      "https://whale-app-trf6r.ondigitalocean.app",
       "*"
       // Add any other origins you want to allow
     ];
