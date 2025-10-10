@@ -540,6 +540,39 @@ server.get('/api/wallet/balance/:username', async (req, res) => {
     res.status(500).json({ error: 'Database error - wallet balance retrieval failed' });
   }
 });
+//  const response = await fetch(`${API_URL}/api/earnings/${username}?password=${localStorage.getItem("passwordtxt")}`);
+server.get('/api/earnings/:username', async (req, res) => {
+  try {
+    const username = req.params.username;
+    const password = req.query.password;
+
+    if (!username) {
+      return res.status(400).json({ error: 'Username is required' });
+    }
+
+    const [users] = await pool.execute(
+      'SELECT * FROM userData WHERE username = ?',
+      [username]
+    );
+    const user = users[0];
+
+    if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+      return res.status(401).json({ error: 'Invalid username or password' });
+    }
+
+    const [earnings] = await pool.execute(
+      'SELECT * FROM unlocks WHERE sellerUsername = ?',
+      [username]
+    );
+
+    console.log(`Earnings retrieved for user: ${username}`, earnings);
+
+    res.json({ earnings });
+  } catch (error) {
+    console.error('Earnings retrieval error:', error);
+    res.status(500).json({ error: 'Database error - earnings retrieval failed' });
+  }
+});
 
 // Custom unlock key route
 server.post('/api/unlock/:keyId', async (req, res) => {
@@ -577,7 +610,7 @@ server.post('/api/unlock/:keyId', async (req, res) => {
         key.keyValue
       ];
 
-      const randomKey = keyVariations[Math.floor(Math.random() * keyVariations.length)];
+      // const randomKey = keyVariations[Math.floor(Math.random() * keyVariations.length)];
 
       console.log(`Unlocking key ${keyId} for user:`, username);
 
@@ -615,7 +648,8 @@ server.post('/api/unlock/:keyId', async (req, res) => {
           user.credits,
           key.keyId,
           key.keyTitle,
-          randomKey,
+          // randomKey,
+          key.keyValue,
           key.username,
           key.email,
           key.price,
@@ -633,7 +667,7 @@ server.post('/api/unlock/:keyId', async (req, res) => {
 
       res.json({
         success: true,
-        key: randomKey,
+        key: key.keyValue,
         transactionId: transactionId
       });
     } else {
@@ -874,6 +908,32 @@ server.delete('/api/listings/:id', async (req, res) => {
 //     }
 // const { data } = await api.post('/api/create-key', fd);
 
+
+server.get('/api/createdKey/:id', async (req, res) => {
+  try { const id = req.params.id;
+    const [keys] = await pool.execute(  
+      'SELECT * FROM createdKeys WHERE id = ?',
+      [id]
+    );  
+    // obscure the key value for security
+   
+
+    let key = keys[0];
+
+ key.keyValue = JSON.stringify(["****","****","****"]);
+ 
+    res.json({
+      success: true,
+      key
+    });
+  } catch (error) {
+    console.error('Error fetching key:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching key'
+    });
+  }
+});
 
 // Custom route for create key
 server.post('/api/create-key', async (req, res) => {
@@ -1831,7 +1891,7 @@ server.get('/api/:table', async (req, res) => {
 server.get('/api/:table/:id', async (req, res) => {
   try {
     const { table, id } = req.params;
-    const allowedTables = ['userData', 'buyCredits', 'redeemCredits', 'earnings', 'unlocks', 'createdKeys', 'notifications', 'wallet', 'reports', 'supportTickets'];
+    const allowedTables = ['userData', 'buyCredits', 'redeemCredits', 'earnings', 'unlocks', 'notifications', 'wallet', 'reports', 'supportTickets'];
 
     if (!allowedTables.includes(table)) {
       return res.status(400).json({ error: 'Invalid table name' });
