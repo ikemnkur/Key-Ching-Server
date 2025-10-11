@@ -1845,7 +1845,7 @@ server.post('/api/profile-picture/:username', async (req, res) => {
   const { username } = req.params;
   let busboy;
   try {
-    busboy = Busboy({ headers: req.headers, limits: { fileSize: 1 * 1024 * 1024 } }); // 1 MB
+    busboy = Busboy({ headers: req.headers, limits: { fileSize: 2 * 1024 * 1024 } }); // 2 MB
   } catch (e) {
     console.error('Failed to init Busboy:', e);
     return res.status(400).json({ message: 'Invalid multipart/form-data request' });
@@ -1924,6 +1924,8 @@ server.post('/api/profile-picture/:username', async (req, res) => {
           'UPDATE userData SET profilePicture = ? WHERE username = ?',
           [imageUrl, username]
         );
+
+        console.log(`Updated profile picture for user ${username} to: ${imageUrl}`);
 
         if (!uploadDone) {
           uploadDone = true;
