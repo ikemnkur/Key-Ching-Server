@@ -1801,6 +1801,191 @@ server.post('/api/upload/transaction-screenshot/:username/:txHash', async (req, 
   req.pipe(busboy);
 });
 
+
+
+// // CREATE TABLE
+//   `userData` (
+//     `id` varchar(10) NOT NULL,
+//     `username` varchar(50) DEFAULT NULL,
+//     `email` varchar(100) DEFAULT NULL,
+//     `credits` int DEFAULT NULL,
+//     `passwordHash` varchar(255) DEFAULT NULL,
+//     `accountType` enum('buyer', 'seller') DEFAULT NULL,
+//     `lastLogin` datetime DEFAULT NULL,
+//     `loginStatus` tinyint(1) DEFAULT NULL,
+//     `firstName` varchar(50) DEFAULT NULL,
+//     `lastName` varchar(50) DEFAULT NULL,
+//     `phoneNumber` varchar(20) DEFAULT NULL,
+//     `birthDate` date DEFAULT NULL,
+//     `encryptionKey` varchar(100) DEFAULT NULL,
+//     `reportCount` int DEFAULT NULL,
+//     `isBanned` tinyint(1) DEFAULT NULL,
+//     `banReason` text,
+//     `banDate` datetime DEFAULT NULL,
+//     `banDuration` int DEFAULT NULL,
+//     `createdAt` bigint DEFAULT NULL,
+//     `updatedAt` bigint DEFAULT NULL,
+//     `twoFactorEnabled` tinyint(1) DEFAULT '0',
+//     `twoFactorSecret` varchar(50) DEFAULT NULL,
+//     `recoveryCodes` json DEFAULT NULL,
+//     `profilePicture` varchar(255) DEFAULT NULL,
+//     `bio` text,
+//     `socialLinks` json DEFAULT NULL,
+//     PRIMARY KEY (`id`),
+//     UNIQUE KEY `username` (`username`),
+//     UNIQUE KEY `email` (`email`)
+//   ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci
+
+/**
+ * POST /api/profile-picture/:username
+ * Accepts a multipart/form-data upload for a user's profile picture.
+ * Stores the image in Google Cloud Storage and updates the user's profilePicture field.
+ */
+server.post('/api/profile-picture/:username', async (req, res) => {
+  const { username } = req.params;
+  let busboy;
+  try {
+    busboy = Busboy({ headers: req.headers, limits: { fileSize: 1 * 1024 * 1024 } }); // 1 MB
+  } catch (e) {
+    console.error('Failed to init Busboy:', e);
+    return res.status(400).json({ message: 'Invalid multipart/form-data request' });
+  }
+
+  let uploadDone = false;
+  let writeStream;
+  let gcsFilePath = '';
+  let mimeTypeGlobal = '';
+  let hadFile = false;
+  let aborted = false;
+
+  busboy.on('file', (fieldname, file, info) => {
+    hadFile = true;
+    const { filename: rawFilename, mimeType } = info || {};
+    const originalName =
+      typeof rawFilename === 'string' && rawFilename.trim() ? rawFilename.trim() : 'profile';
+
+    // Validate by ext and mime
+    const extFromName = path.extname(originalName).toLowerCase().replace('.', '');
+    const extOk = !!extFromName && ALLOWED.test(extFromName);
+    const mimeOk = ALLOWED.test((mimeType || '').split('/').pop() || '');
+
+    if (!extOk && !mimeOk) {
+      file.resume();
+      aborted = true;
+      return res.status(400).json({ message: 'Error: Images Only!' });
+    }
+
+    const base = path
+      .basename(originalName)
+      .replace(/\s+/g, '_')
+      .replace(/[^A-Za-z0-9._-]/g, '');
+
+    const resolvedExt =
+      (extOk ? `.${extFromName}` : (MIME_TO_EXT[(mimeType || '').toLowerCase()] || '')) || '';
+
+    let finalBase = base;
+    if (!resolvedExt || !base.toLowerCase().endsWith(resolvedExt.toLowerCase())) {
+      finalBase = `${base}${resolvedExt}`;
+    }
+
+    const finalName = `${uuidv4()}_${finalBase}`;
+    gcsFilePath = `${DEST_PREFIX}/profile_pics/${finalName}`;
+    mimeTypeGlobal = mimeType || 'application/octet-stream';
+
+    const bucket = storage.bucket(BUCKET_NAME);
+    const gcsFile = bucket.file(gcsFilePath);
+
+    writeStream = gcsFile.createWriteStream({
+      metadata: { contentType: mimeTypeGlobal },
+      resumable: false,
+      validation: 'md5',
+    });
+
+    file.pipe(writeStream);
+
+    writeStream.on('error', (err) => {
+      console.error('GCS write error:', err);
+      if (!uploadDone) {
+        uploadDone = true;
+        return res.status(500).json({ message: 'Upload failed' });
+      }
+    });
+
+    writeStream.on('finish', async () => {
+      try {
+        await bucket.file(gcsFilePath).makePublic().catch((err) => {
+          if (err && err.code !== 400) throw err;
+        });
+
+        const imageUrl = publicUrl(BUCKET_NAME, gcsFilePath);
+
+        // Update user profilePicture in DB
+        await pool.execute(
+          'UPDATE userData SET profilePicture = ? WHERE username = ?',
+          [imageUrl, username]
+        );
+
+        if (!uploadDone) {
+          uploadDone = true;
+          return res.status(200).json({
+            success: true,
+            message: 'Profile picture uploaded successfully',
+            url: imageUrl
+          });
+        }
+      } catch (err) {
+        console.error('Post-upload error:', err);
+        if (!uploadDone) {
+          uploadDone = true;
+          return res.status(500).json({ message: 'Server error' });
+        }
+      }
+    });
+  });
+
+  busboy.on('error', (err) => {
+    console.error('Busboy error:', err);
+    if (!uploadDone) {
+      uploadDone = true;
+      return res.status(400).json({ message: 'Malformed upload' });
+    }
+  });
+
+  busboy.on('partsLimit', () => {
+    aborted = true;
+    if (!uploadDone) {
+      uploadDone = true;
+      return res.status(400).json({ message: 'Too many parts in form data' });
+    }
+  });
+
+  busboy.on('filesLimit', () => {
+    aborted = true;
+    if (!uploadDone) {
+      uploadDone = true;
+      return res.status(400).json({ message: 'Too many files' });
+    }
+  });
+
+  busboy.on('fieldsLimit', () => {
+    aborted = true;
+    if (!uploadDone) {
+      uploadDone = true;
+      return res.status(400).json({ message: 'Too many fields' });
+    }
+  });
+
+  busboy.on('finish', () => {
+    if (aborted) return;
+    if (!hadFile && !uploadDone) {
+      uploadDone = true;
+      return res.status(400).json({ message: 'No file uploaded' });
+    }
+  });
+
+  req.pipe(busboy);
+});
+
 // Custom route for user redemptions
 server.post('/api/redemptions/:username', async (req, res) => {
   try {
