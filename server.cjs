@@ -36,6 +36,7 @@ const corsOptions = {
     const allowedOrigins = [
       'http://localhost:3000',
       'http://localhost:5001',
+      'https://key-ching.com',
       'https://microtrax.netlify.app',
       "https://servers4sqldb.uc.r.appspot.com",
       "https://orca-app-j32vd.ondigitalocean.app",
