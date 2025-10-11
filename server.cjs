@@ -921,12 +921,15 @@ server.get('/api/createdKey/:id', async (req, res) => {
 
     // get profilepic of the seller from userData table
     const [userData] = await pool.execute(
-      'SELECT profilepic FROM users WHERE username = ?',
+      'SELECT profilePicture FROM userData WHERE username = ?',
       [keys[0].username]
     );
 
     let key = keys[0];
-    key.profilePic = userData.length > 0 ? userData[0].profilepic : null;
+    // key.profilePic = userData.length > 0 ? userData[0].profilePicture : null;
+    key.profilePic = userData[0].profilePicture;
+    console.log("Seller profile pic:", key.profilePic);
+
     key.keyValue = JSON.stringify(["****-****-****-****"]);
  
     res.json({
