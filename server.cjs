@@ -918,11 +918,16 @@ server.get('/api/createdKey/:id', async (req, res) => {
       [id]
     );  
     // obscure the key value for security
-   
+
+    // get profilepic of the seller from userData table
+    const [userData] = await pool.execute(
+      'SELECT profilepic FROM users WHERE username = ?',
+      [keys[0].username]
+    );
 
     let key = keys[0];
-
- key.keyValue = JSON.stringify(["****","****","****"]);
+    key.profilePic = userData.length > 0 ? userData[0].profilepic : null;
+    key.keyValue = JSON.stringify(["****-****-****-****"]);
  
     res.json({
       success: true,
@@ -1033,6 +1038,7 @@ server.post('/api/create-key', async (req, res) => {
           0,
           encryptionKey || `enc_key_${Date.now()}`,
           JSON.stringify(processedTags)
+          
         ]
       );
 
@@ -1583,6 +1589,7 @@ const db = require('./config/db');
 const path = require('path');
 const Busboy = require('busboy'); // v1+ exports a function, not a class
 const { Storage } = require('@google-cloud/storage');
+const { setDefaultResultOrder } = require('dns');
 
 // example API startpoint usage in React:
 // export const uploadTransactionScreenshot = async (formData) => {
