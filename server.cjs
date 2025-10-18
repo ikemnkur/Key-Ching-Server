@@ -526,7 +526,6 @@ server.get('/api/wallet/balance/:username', async (req, res) => {
       [username]
     );
 
-    // const wallet = wallets[0];
     const user = users[0];
 
     if (user) {
@@ -597,12 +596,6 @@ server.post('/api/unlock/:keyId', async (req, res) => {
 
     const user = users[0];
 
-    // const [wallets] = await pool.execute(
-    //   'SELECT * FROM wallet WHERE username = ?',
-    //   [username]
-    // );
-
-    // const wallet = wallets[0];
 
     if (key && key.available > 0) {
       // Simulate random key from available pool
@@ -1279,20 +1272,20 @@ server.get('/api/redemptions/:username', async (req, res) => {
   }
 });
 
-async function checkTransaction(crypto, txHash, senderAddress) {
-  const receiverAddress = wallets[crypto];
+async function checkTransaction(crypto, txHash, walletAddress) {
+  // const receiverAddress = wallets[crypto];
 
   try {
     if (crypto === 'BTC') {
-      return await checkBitcoinTransaction(txHash, receiverAddress);
+      return await checkBitcoinTransaction(txHash, walletAddress);
     } else if (crypto === 'ETH') {
-      return await checkEthereumTransaction(txHash, receiverAddress);
+      return await checkEthereumTransaction(txHash, walletAddress);
     } else if (crypto === 'LTC') {
-      return await checkLitecoinTransaction(txHash, receiverAddress);
+      return await checkLitecoinTransaction(txHash, walletAddress);
     } else if (crypto === 'SOL') {
-      return await checkSolanaTransaction(txHash, receiverAddress);
+      return await checkSolanaTransaction(txHash, walletAddress);
     } else if( crypto === "XRP") {
-      return await checkRippleTransaction(txHash, receiverAddress);
+      return await checkRippleTransaction(txHash, walletAddress);
     }
   } catch (error) {
     return { success: false, error: error.message };
@@ -1522,7 +1515,7 @@ server.post('/api/purchases/:username', async (req, res) => {
         return res.status(400).json({ error: 'Missing required fields for transaction verification' });
       }
       // Verify the transaction using blockchain APIs
-      const result = await checkTransaction(crypto, txHash, senderAddress);
+      const result = await checkTransaction(crypto, txHash, walletAddress);
 
       if (result.success) {
         const [purchases] = await pool.execute(
@@ -1593,6 +1586,7 @@ const path = require('path');
 const Busboy = require('busboy'); // v1+ exports a function, not a class
 const { Storage } = require('@google-cloud/storage');
 const { setDefaultResultOrder } = require('dns');
+const { waitForDebugger } = require('inspector');
 
 // example API startpoint usage in React:
 // export const uploadTransactionScreenshot = async (formData) => {
@@ -2011,13 +2005,13 @@ server.post('/api/redemptions/:username', async (req, res) => {
 
     const user = users[0];
 
-    const [wallets] = await pool.execute(
-      'SELECT * FROM wallet WHERE username = ?',
-      [username]
-    );
+    // const [wallets] = await pool.execute(
+    //   'SELECT * FROM wallet WHERE username = ?',
+    //   [username]
+    // );
 
 
-    const wallet = wallets[0];
+    // const wallet = wallets[0];
 
     // Update availability
     await pool.execute(
