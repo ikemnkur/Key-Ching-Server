@@ -1272,21 +1272,37 @@ server.get('/api/redemptions/:username', async (req, res) => {
   }
 });
 
-async function checkTransaction(crypto, txHash, walletAddress) {
+async function checkTransaction(crypto, txHash, walletAddress, amount) {
   // const receiverAddress = wallets[crypto];
 
   try {
     if (crypto === 'BTC') {
-      return await checkBitcoinTransaction(txHash, walletAddress);
+     
+      const txamount = await checkBitcoinTransaction(txHash, walletAddress); 
+      console.log ("amount in checkTransaction:", amount , "vs. txamount:", txamount);
+      return txamount;
     } else if (crypto === 'ETH') {
-      return await checkEthereumTransaction(txHash, walletAddress);
+      
+      const txamount = await checkEthereumTransaction(txHash, walletAddress);
+      console.log ("amount in checkTransaction:", amount , "vs. txamount:", txamount);
+      return txamount;
     } else if (crypto === 'LTC') {
-      return await checkLitecoinTransaction(txHash, walletAddress);
+      
+      const txamount = await checkLitecoinTransaction(txHash, walletAddress);
+      console.log ("amount in checkTransaction:", amount , "vs. txamount:", txamount);
+      return txamount;
     } else if (crypto === 'SOL') {
-      return await checkSolanaTransaction(txHash, walletAddress);
+      
+      const txamount = await checkSolanaTransaction(txHash, walletAddress);
+      console.log ("amount in checkTransaction:", amount , "vs. txamount:", txamount);
+      return txamount;
     } else if( crypto === "XRP") {
-      return await checkRippleTransaction(txHash, walletAddress);
+      
+      const txamount = await checkRippleTransaction(txHash, walletAddress);
+      console.log ("amount in checkTransaction:", amount , "vs. txamount:", txamount);
+      return txamount;
     }
+ 
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -1515,7 +1531,13 @@ server.post('/api/purchases/:username', async (req, res) => {
         return res.status(400).json({ error: 'Missing required fields for transaction verification' });
       }
       // Verify the transaction using blockchain APIs
-      const result = await checkTransaction(crypto, txHash, walletAddress);
+      const result = await checkTransaction(crypto, txHash, walletAddress, amount);
+
+      if (result.amount === cryptoAmount) {
+        console.log('Transaction verified successfully:', result);
+      } else {
+        return res.status(400).json({ error: 'Transaction amount does not match expected amount' });
+      }
 
       if (result.success) {
         const [purchases] = await pool.execute(
