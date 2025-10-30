@@ -33,3 +33,5 @@ service-accounts/*.json
 
 service-account.json
 
+.env
+.env
