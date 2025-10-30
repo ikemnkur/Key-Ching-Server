@@ -43,6 +43,7 @@ const corsOptions = {
       "https://orca-app-j32vd.ondigitalocean.app",
       "https://monkfish-app-mllt8.ondigitalocean.app/",
       "http://localhost:5173",
+      "http://localhost:5174",
       "https://whale-app-trf6r.ondigitalocean.app",
       "*"
       // Add any other origins you want to allow
@@ -1342,7 +1343,7 @@ async function checkTransaction(crypto, txHash, walletAddress, amount) {
       // const txamount = await checkBitcoinTransaction(txHash, walletAddress);
       console.log("amount in checkTransaction:", amount, "vs. txamount:", transactions.amount);
       return transactions.amount;
-      
+
     } else if (crypto === 'SOL') {
 
       const transactions = await mysqlConnection.query(`SELECT * FROM CryptoTransactions_SOL WHERE hash = ?`, [txHash]);
@@ -1369,7 +1370,7 @@ async function checkTransaction(crypto, txHash, walletAddress, amount) {
       // const txamount = await checkBitcoinTransaction(txHash, walletAddress);
       console.log("amount in checkTransaction:", amount, "vs. txamount:", transactions.amount);
       return transactions.amount;
-      
+
     } else if (crypto === "XRP") {
 
       // const txamount = await checkRippleTransaction(txHash, walletAddress);
@@ -1384,184 +1385,6 @@ async function checkTransaction(crypto, txHash, walletAddress, amount) {
   }
 }
 
-// async function checkRippleTransaction(txHash, receiverAddress) {
-//   // Using Ripple Data API
-//   const response = await fetch(`https://data.ripple.com/v2/transactions/${txHash}`);
-
-//   if (!response.ok) {
-//     throw new Error('Transaction not found or invalid');
-//   }
-
-//   const data = await response.json();
-
-//   if (!data.transaction) {
-//     return { success: false, error: 'Transaction not found' };
-//   }
-
-//   const tx = data.transaction;
-
-//   if (tx.Destination !== receiverAddress) {
-//     return { success: false, error: 'Payment not sent to the correct address' };
-//   }
-
-//   const amount = parseFloat(tx.Amount) / 1e6; // Convert drops to XRP
-
-//   return { success: true, amount: amount };
-// }
-
-// async function checkSolanaTransaction(txHash, receiverAddress) {
-//   // Using Solana Explorer API
-//   const response = await fetch(`https://api.mainnet-beta.solana.com`, {
-//     method: 'POST',
-//     headers: {
-//       'Content-Type': 'application/json'
-//     },
-//     body: JSON.stringify({
-//       jsonrpc: "2.0",
-//       id: 1,
-//       method: "getTransaction",
-//       params: [txHash, { encoding: "jsonParsed" }]
-//     })
-//   });
-
-//   if (!response.ok) {
-//     throw new Error('Transaction not found or invalid');
-//   }
-
-//   const data = await response.json();
-
-//   if (!data.result) {
-//     return { success: false, error: 'Transaction not found' };
-//   }
-
-//   const tx = data.result;
-
-//   // Check if any of the postTokenBalances match the receiver address
-//   const output = tx.transaction.message.accountKeys.find(acc => acc.pubkey === receiverAddress);
-
-//   if (!output) {
-//     return { success: false, error: 'Payment not sent to the correct address' };
-//   }
-
-//   // Sum up the amount sent to the receiver address
-//   let amount = 0;
-//   tx.meta.postTokenBalances.forEach(balance => {
-//     if (balance.owner === receiverAddress) {
-//       amount += parseInt(balance.uiTokenAmount.amount) / Math.pow(10, balance.uiTokenAmount.decimals);
-//     }
-//   });
-
-//   return { success: true, amount: amount };
-// }
-
-// async function checkBitcoinTransaction(txHash, receiverAddress) {
-//   const response = await fetch(`https://blockchain.info/rawtx/${txHash}`);
-
-//   if (!response.ok) {
-//     throw new Error('Transaction not found or invalid');
-//   }
-
-//   const data = await response.json();
-
-//   // Find output to our address
-//   const output = data.out.find(o => o.addr === receiverAddress);
-
-//   if (!output) {
-//     return { success: false, error: 'Payment not sent to the correct address' };
-//   }
-
-//   const amount = output.value / 100000000; // Convert satoshis to BTC
-
-//   return { success: true, amount: amount };
-// }
-
-// async function checkEthereumTransaction(txHash, receiverAddress) {
-//   // Using Etherscan API (free, no key needed for basic queries)
-//   const response = await fetch(`https://api.etherscan.io/api?module=proxy&action=eth_getTransactionByHash&txhash=${txHash}`);
-
-//   if (!response.ok) {
-//     throw new Error('Transaction not found or invalid');
-//   }
-
-//   const data = await response.json();
-
-//   if (!data.result) {
-//     return { success: false, error: 'Transaction not found' };
-//   }
-
-//   const tx = data.result;
-
-//   if (tx.to.toLowerCase() !== receiverAddress.toLowerCase()) {
-//     return { success: false, error: 'Payment not sent to the correct address' };
-//   }
-
-//   const amount = parseInt(tx.value, 16) / 1e18; // Convert wei to ETH
-
-//   return { success: true, amount: amount };
-// }
-
-// async function checkLitecoinTransaction(txHash, receiverAddress) {
-//   // Using BlockCypher API for Litecoin
-//   const response = await fetch(`https://api.blockcypher.com/v1/ltc/main/txs/${txHash}`);
-
-//   if (!response.ok) {
-//     throw new Error('Transaction not found or invalid');
-//   }
-
-//   const data = await response.json();
-
-//   // Find output to our address
-//   const output = data.outputs.find(o => o.addresses && o.addresses.includes(receiverAddress));
-
-//   if (!output) {
-//     return { success: false, error: 'Payment not sent to the correct address' };
-//   }
-
-//   const amount = output.value / 100000000; // Convert litoshis to LTC
-
-//   return { success: true, amount: amount };
-// }
-
-// // Example of logging purchase data
-// let data = {
-//         username: ud?.username || 'anonymous',
-//         userId: ud?.user_id || ud?.id || 'unknown',
-//         name: userDetails.name,
-//         email: userDetails.email,
-//         walletAddress: userDetails.walletAddress,
-//         key: userDetails.key || '',
-//         transactionId: userDetails.transactionId,
-//         transactionHash: userDetails.transactionHash || '',
-//         blockExplorerLink: userDetails.blockExplorerLink || '',
-//         currency: currency,
-//         amount: amount,
-//         cryptoAmount: cryptoAmount,
-//         rate: rate,
-//         date: new Date(),
-//         timestamp: new Date().toISOString(),
-//         session_id: crypto?.randomUUID ? crypto.randomUUID() : Math.random().toString(36),
-//         orderLoggingEnabled: enableOrderLogging,
-//         userAgent: navigator.userAgent,
-//         ip: 'client-side' // Would be set by backend
-//       }
-
-//  api.post('/api/purchases', data)
-//         .then(() => {
-//           setMessage(`Order submitted successfully! ${enableOrderLogging ? 'Order logged with user tracking.' : 'Processing without logging.'} Please wait for confirmation.`);
-//           setOrderSubmitted(true);
-//           setErrorMessage('');
-//         })
-//         .catch((error) => {
-//           console.error('Error submitting order:', error);
-//           setErrorMessage('An error occurred. Please try again.');
-//         });
-
-// api.post(`/api/purchases/${ud?.username || 'anonymous'}`, 
-//       {data: data}
-//     )
-
-//     server.post('/api/purchases/:username', async (req, res) => {
-// try {
 server.post('/api/purchases/:username', async (req, res) => {
   try {
     const {
@@ -1607,9 +1430,9 @@ server.post('/api/purchases/:username', async (req, res) => {
         return res.status(400).json({ error: 'Missing required fields for transaction verification' });
       }
       // Verify the transaction using blockchain APIs
-      const result = await checkTransaction(crypto, txHash, walletAddress, amount);
+      const result = await checkTransaction(crypto, txHash, walletAddress, cryptoAmount);
 
-      if (result.amount === cryptoAmount) {
+      if (result === cryptoAmount) {
         console.log('Transaction verified successfully:', result);
       } else {
         return res.status(400).json({ error: 'Transaction amount does not match expected amount' });
@@ -1765,39 +1588,111 @@ async function fetchEsploraAddressTxs(baseUrl, address, limit = 100) {
 }
 
 // -------- ETH via Etherscan --------
-async function fetchEth(address, limit = 100) {
-  if (!ETHERSCAN_API_KEY) throw new Error('ETHERSCAN_API_KEY not set');
-  const url = 'https://api.etherscan.io/api';
-  const { data } = await axios.get(url, {
-    params: {
-      module: 'account',
-      action: 'txlist',
-      address,
-      startblock: 0,
-      endblock: 99999999,
-      page: 1,
-      offset: Math.min(100, limit),
-      sort: 'desc',
-      apikey: ETHERSCAN_API_KEY
-    },
-    timeout: 20000
-  });
-  if (data.status !== '1' || !Array.isArray(data.result)) return [];
-  const me = address.toLowerCase();
 
-  return data.result.slice(0, limit).map(t => {
-    const from = (t.from || '').toLowerCase();
-    const to = (t.to || '').toLowerCase();
-    const dir = to === me && from !== me ? 'IN' : (from === me && to !== me ? 'OUT' : '—');
-    return {
-      time: ts(Number(t.timeStamp)),
-      direction: dir,
-      amount: fmt(t.value || '0', 18),
-      from: t.from || null,
-      to: t.to || null,
-      hash: t.hash
-    };
-  });
+/**
+ * Fetch transactions for an address using Etherscan API V2.
+ * @param {string} address        - The wallet address to look up.
+ * @param {number} limit          - Max number of transactions to fetch.
+ * @param {number} chainId        - Numeric chain ID (e.g., 1 = Ethereum mainnet).
+ * @param {string} action         - E.g., "txlist", "getdeposittxs", etc.
+ * @param {object} extraParams    - Any extra query params (e.g., from-address filter).
+ */
+async function fetchEth({
+  address,
+  limit = 100,
+  chainId = 1,
+  action = "txlist",
+  extraParams = {}
+}) {
+  const url = `https://api.etherscan.io/v2/api`;
+  const params = {
+    apikey: ETHERSCAN_API_KEY,
+    chainid: chainId,
+    module: "account",            // adjust if other module
+    action,
+    address,
+    startblock: 0,
+    endblock: 99999999,
+    page: 1,
+    offset: Math.min(100, limit),
+    sort: "desc",
+    ...extraParams
+  };
+  console.log("Etherscan Address:", params.address, "Action:", action, "ChainID:", chainId);
+
+  try {
+    const { data } = await axios.get(url, { params, timeout: 20000 });
+
+    if (data.status !== "1") {
+      // handle “no results” vs error
+      if (data.message && data.message.includes("No transactions found")) {
+        return [];
+      }
+      throw new Error(`Etherscan V2 error: ${data.message} - ${JSON.stringify(data.result)}`);
+    }
+
+    // Ensure result is array
+    if (!Array.isArray(data.result)) {
+      throw new Error(`Unexpected result format: ${JSON.stringify(data.result)}`);
+    }
+
+    // Map over the results similarly to your previous logic
+    const me = address.toLowerCase();
+    return data.result.slice(0, limit).map(t => {
+      const from = (t.from || "").toLowerCase();
+      const to = (t.to || "").toLowerCase();
+      const dir = (to === me && from !== me) ? "IN"
+        : (from === me && to !== me) ? "OUT"
+          : "—";
+
+      //       // Example Response
+
+      //       {
+      //   "status": "1",
+      //   "message": "OK",
+      //   "result": [
+      //     {
+      //       "blockNumber": "23666665",
+      //       "blockHash": "0xabf940d34137c7104c7b1f1c4f1049433417d4b4c3e360024062f5066ad92a9f",
+      //       "timeStamp": "1761542519",
+      //       "hash": "0xb838805293426888a8e44c7a42a3775bf7e2b8c5a779bcd59544dc9cc0bdeaae",
+      //       "nonce": "1629552",
+      //       "transactionIndex": "88",
+      //       "from": "0x6081258689a75d253d87ce902a8de3887239fe80",
+      //       "to": "0x9a61f30347258a3d03228f363b07692f3cbb7f27",
+      //       "value": "1240860000000000",
+      //       "gas": "21000",
+      //       "gasPrice": "114277592",
+      //       "input": "0x",
+      //       "methodId": "0x",
+      //       "functionName": "",
+      //       "contractAddress": "",
+      //       "cumulativeGasUsed": "5026825",
+      //       "txreceipt_status": "1",
+      //       "gasUsed": "21000",
+      //       "confirmations": "20522",
+      //       "isError": "0"
+      //     }
+      //   ]
+      // }
+
+      console.log("Etherscan V2 tx:", t);
+
+      // Note: Ensure field names match what the V2 endpoint returns
+      return {
+        time: new Date(Number(t.timeStamp) * 1000).toISOString(),
+        direction: dir,
+        amount: t.value /* convert from t.value depending on decimals */,
+        from: t.from || null,
+        to: t.to || null,
+        hash: t.hash
+      };
+    });
+
+  } catch (error) {
+    console.error("fetchEtherscanV2 error:", error.message);
+    throw error;
+  }
 }
 
 // -------- SOL via JSON-RPC --------
@@ -1846,26 +1741,97 @@ async function fetchSol(address, limit = 100) {
 
 // // -------- Unified endpoint --------
 // server.get('/txs', async (req, res) => {
-//   try {
-//     const chain = String(req.query.chain || '').toUpperCase();
-//     const address = String(req.query.address || '').trim();
-//     const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 100));
-//     if (!address || !chain) return res.status(400).json({ error: 'Provide chain and address' });
-
-//     let rows = [];
-//     if (chain === 'BTC') rows = await fetchEsploraAddressTxs(BTC_ESPLORA, address, limit);
-//     else if (chain === 'LTC') rows = await fetchEsploraAddressTxs(LTC_ESPLORA, address, limit);
-//     else if (chain === 'ETH') rows = await fetchEth(address, limit);
-//     else if (chain === 'SOL') rows = await fetchSol(address, limit);
-//     else return res.status(400).json({ error: 'Unsupported chain. Use BTC, LTC, ETH, SOL' });
-
-//     res.json({ chain, address, count: rows.length, txs: rows });
-//   } catch (e) {
-//     res.status(500).json({ error: e.message || String(e) });
-//   }
+//   FetchRecentTransactionsCron()
 // });
 
 
+
+server.post('/api/lookup-transaction', async (req, res) => {
+
+  FetchRecentTransactionsCron();
+
+  // wait a few seconds to allow the cron job to possibly update the database
+  // await new Promise((timeout) => setTimeout(timeout, 1000)); // wait 5 seconds for the cron to possibly update the DB
+
+
+  // key value pairs: ETH, BTC, LTC, SOL, XRP
+  const blockchainMap = {
+    "ethereum": "ETH",
+    "bitcoin": "BTC",
+    "litecoin": "LTC",
+    "solana": "SOL",
+    "xrp": "XRP"
+  };
+
+  try {
+    const { sendAddress, blockchain, transactionHash } = req.body;
+    console.log('Lookup transaction body -request:', { sendAddress, blockchain, transactionHash });
+    
+    let tx = [];
+    let result = null;
+    
+    if (blockchain === "bitcoin" || blockchain === "BTC") {
+      [tx] = await pool.execute(
+        `SELECT * FROM CryptoTransactions_BTC WHERE direction = 'IN' AND hash = ?`,
+        [transactionHash]
+      );
+      console.log('Lookup transaction result for bitcoin:', tx.length > 0 ? tx[0] : 'No transaction found');
+      
+      if (tx.length === 0) {
+        return res.status(404).json({ error: 'Transaction not found' });
+      }
+      result = tx[0];
+    }
+    else if (blockchain === "ethereum" || blockchain === "ETH") {
+      [tx] = await pool.execute(
+        `SELECT * FROM CryptoTransactions_ETH WHERE direction = 'IN' AND hash = ?`,
+        [ transactionHash]
+      );
+      console.log('Lookup transaction result for ethereum:', tx.length > 0 ? tx[0] : 'No transaction found');
+      
+      if (tx.length === 0) {
+        return res.status(404).json({ error: 'Transaction not found' });
+      }
+      result = tx[0];
+    }
+    else if (blockchain === "litecoin" || blockchain === "LTC") {
+      [tx] = await pool.execute(
+        `SELECT * FROM CryptoTransactions_LTC WHERE direction = 'IN' AND hash = ?`,
+        [transactionHash]
+      );
+      console.log('Lookup transaction result for litecoin:', tx.length > 0 ? tx[0] : 'No transaction found');
+      
+      if (tx.length === 0) {
+        return res.status(404).json({ error: 'Transaction not found' });
+      }
+      result = tx[0];
+    }
+    else if (blockchain === "solana" || blockchain === "SOL") {
+      [tx] = await pool.execute(
+        `SELECT * FROM CryptoTransactions_SOL WHERE direction = 'IN' AND hash = ?`,
+        [transactionHash]
+      );
+      console.log('Lookup transaction result for solana:', tx.length > 0 ? tx[0] : 'No transaction found');
+      
+      if (tx.length === 0) {
+        return res.status(404).json({ error: 'Transaction not found' });
+      }
+      result = tx[0];
+    }
+    else {
+      return res.status(400).json({ error: 'Unsupported blockchain. Use bitcoin, ethereum, litecoin, or solana' });
+    }
+
+    result.found = true;
+
+    res.json(result);
+
+  } catch (error) {
+    console.error('Lookup transaction error:', error);
+    res.status(500).json({ error: 'Database error - transaction lookup failed' });
+  }
+
+});
 
 
 
@@ -2498,8 +2464,15 @@ const walletAddressMap = {
 
 // create cron job to fetch the most recent transactions for all wallet addresses every 15 minutes
 const cron = require('node-cron');
+const { time } = require('console');
 
-cron.schedule('*/60 * * * *', async () => {
+cron.schedule('*/30 * * * *', async () => {
+
+  FetchRecentTransactionsCron();
+
+});
+
+async function FetchRecentTransactionsCron() {
   try {
     console.log('🔄 Fetching recent transactions for all wallet addresses...');
     // Iterate over walletAddressMap entries (key = chain, value = address) for the cron job
@@ -2518,7 +2491,7 @@ cron.schedule('*/60 * * * *', async () => {
         let rows = [];
         if (chain === 'BTC') rows = await fetchEsploraAddressTxs(BTC_ESPLORA, address, limit);
         else if (chain === 'LTC') rows = await fetchEsploraAddressTxs(LTC_ESPLORA, address, limit);
-        else if (chain === 'ETH') rows = await fetchEth(address, limit);
+        else if (chain === 'ETH') rows = await fetchEth({ address, limit, chainId: 1, action: "txlist", extraParams: {} });
         else if (chain === 'SOL') rows = await fetchSol(address, limit);
         else {
           console.log('Unsupported chain. Use BTC, LTC, ETH, SOL');
@@ -2534,54 +2507,13 @@ cron.schedule('*/60 * * * *', async () => {
           count: rows.length,
           txs: rows
         };
-        console.log(`✅ Fetched ${rows.length} transactions for ${chain} address ${address}`);
-        // return txs;
-
-
-        // Example transaction data structure for reference (not used in production):
-        // Example transaction data structure for reference (not used in production):
-        // const exampleTxs = { chain, address, count: rows.length, txs: rows };
-
-        // check db for existing transactions to avoid duplicate entries of rows
-
-
-
-        // // Collect hashes to check for existence in one query
-        // const txHashes = txs.txs.map(tx => tx.hash);
-        // console.log('Transaction hashes to check:', txHashes);
-        // const [existingTxs] = await pool.query(
-        //   `SELECT hash FROM CryptoTransactions_${chain} WHERE hash IN (${txHashes.map(() => '?').join(',')})`,
-        //   txHashes
-        // );
-        // const existingHashes = new Set(existingTxs.map(row => row.hash));
-
-        // // Filter out transactions that already exist
-        // const newTxs = txs.txs.filter(tx => !existingHashes.has(tx.hash));
-
-        // if (newTxs.length > 0) {
-        //   // Prepare values for bulk insert
-        //   const values = newTxs.map(tx => [
-        //     tx.time,
-        //     tx.direction,
-        //     tx.amount,
-        //     tx.from,
-        //     tx.to,
-        //     tx.hash
-        //   ]);
-        //   await pool.query(
-        //     `INSERT INTO CryptoTransactions_${chain} (time, direction, amount, from, to, hash) VALUES ?`,
-        //     [values]
-        //   );
-        //   console.log(`Inserted ${newTxs.length} new transactions into CryptoTransactions_${chain}`);
-        // } else {
-        //   console.log('No new transactions to insert for', chain);
-        // }
+        // console.log(`✅ Fetched ${rows.length} transactions for ${chain} address ${address}`);
 
 
         for (const tx of txs.txs) {
           const transactionId = tx.hash;
 
-          console.log(`Time: ${tx.time}, Direction: ${tx.direction}, Amount: ${tx.amount}, From: ${tx.from}, To: ${tx.to}, Hash: ${tx.hash}`);
+          // console.log(`Time: ${tx.time}, Direction: ${tx.direction}, Amount: ${tx.amount}, From: ${tx.from}, To: ${tx.to}, Hash: ${tx.hash}`);
 
           const [existingTxs] = await pool.execute(
             `SELECT * FROM CryptoTransactions_${chain} WHERE hash = ?`,
@@ -2590,13 +2522,13 @@ cron.schedule('*/60 * * * *', async () => {
 
           // Check if transaction already exists
           if (existingTxs.length > 0) {
-            console.log(`Transaction ${transactionId} already exists in the database. Skipping.`);
+            // console.log(`Transaction ${transactionId} already exists in the database. Skipping.`);
             continue; // Skip to next transaction
           }
 
           // Insert new transaction
           await pool.execute(
-            `INSERT INTO CryptoTransactions_${chain} (time, direction, amount, \`from\`, \`to\`, hash) VALUES (?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO CryptoTransactions_${chain} (time, direction, amount, fromAddress, toAddress, hash) VALUES (?, ?, ?, ?, ?, ?)`,
             [
               tx.time,
               tx.direction,
@@ -2607,7 +2539,7 @@ cron.schedule('*/60 * * * *', async () => {
             ]
           );
 
-          console.log(`Inserted transaction ${transactionId} into CryptoTransactions_${chain}`);
+          // console.log(`Inserted transaction ${transactionId} into CryptoTransactions_${chain}`);
         }
 
 
@@ -2621,4 +2553,4 @@ cron.schedule('*/60 * * * *', async () => {
   } catch (error) {
     console.error('❌ Error fetching recent transactions:', error);
   }
-});
+}
