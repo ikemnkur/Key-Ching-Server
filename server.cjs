@@ -676,6 +676,45 @@ server.post('/api/unlock/:keyId', async (req, res) => {
   }
 });
 
+
+// Custom unlock key route
+server.post('/api/unlock-preview/:keyId', async (req, res) => {
+  try {
+    const keyId = req.params.keyId;
+
+    const { username } = req.body;
+
+    const [keys] = await pool.execute(
+      'SELECT * FROM createdKeys WHERE id = ?',
+      [keyId]
+    );
+
+    const key = keys[0];
+
+    const [users] = await pool.execute(
+      'SELECT * FROM userData WHERE username = ?',
+      [username]
+    );
+
+    const user = users[0];
+
+    if (user.accountType == "seller" && key.sellerUsername == username) {
+      if (key && key.available > 0) {
+        res.json({
+          success: true,
+          key: key.keyValue,
+          transactionId: transactionId
+        });
+      }
+    } else {
+      res.status(404).json({ success: false, message: 'Key not available or not found' });
+    }
+  } catch (error) {
+    console.error('Unlock key error:', error);
+    res.status(500).json({ success: false, message: 'Database error - unlock key failed' });
+  }
+});
+
 // Custom route for seller listings
 server.get('/api/seller/listings/:id', async (req, res) => {
   try {
