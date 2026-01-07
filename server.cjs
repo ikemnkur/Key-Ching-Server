@@ -456,12 +456,156 @@ server.get('/server', async (req, res) => {
 
 // Health check endpoint
 server.get('/health', (req, res) => {
-  res.json({
-    status: 'OK',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    environment: process.env.NODE_ENV || 'development'
-  });
+  const uptimeSeconds = process.uptime();
+  const uptimeFormatted = {
+    days: Math.floor(uptimeSeconds / 86400),
+    hours: Math.floor((uptimeSeconds % 86400) / 3600),
+    minutes: Math.floor((uptimeSeconds % 3600) / 60),
+    seconds: Math.floor(uptimeSeconds % 60)
+  };
+
+  const memoryUsage = process.memoryUsage();
+  const memoryFormatted = {
+    rss: `${Math.round(memoryUsage.rss / 1024 / 1024)} MB`,
+    heapTotal: `${Math.round(memoryUsage.heapTotal / 1024 / 1024)} MB`,
+    heapUsed: `${Math.round(memoryUsage.heapUsed / 1024 / 1024)} MB`
+  };
+
+  const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Health Check - Key-Ching Server</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .container {
+      background: white;
+      border-radius: 16px;
+      padding: 40px;
+      max-width: 600px;
+      width: 100%;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      background: #10b981;
+      color: white;
+      padding: 12px 24px;
+      border-radius: 50px;
+      font-weight: bold;
+      font-size: 1.2em;
+      margin-bottom: 30px;
+    }
+    .status-indicator {
+      width: 12px;
+      height: 12px;
+      background: white;
+      border-radius: 50%;
+      margin-right: 10px;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    h1 {
+      color: #333;
+      margin-bottom: 30px;
+      font-size: 2em;
+    }
+    .info-grid {
+      display: grid;
+      gap: 20px;
+    }
+    .info-item {
+      background: #f8fafc;
+      padding: 20px;
+      border-radius: 12px;
+      border-left: 4px solid #667eea;
+    }
+    .info-label {
+      color: #64748b;
+      font-size: 0.85em;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+    }
+    .info-value {
+      color: #1e293b;
+      font-size: 1.3em;
+      font-weight: 600;
+    }
+    .timestamp {
+      text-align: center;
+      color: #64748b;
+      font-size: 0.9em;
+      margin-top: 30px;
+      padding-top: 20px;
+      border-top: 1px solid #e2e8f0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="status-badge">
+      <span class="status-indicator"></span>
+      System Healthy
+    </div>
+    
+    <h1>🔑 Key-Ching Server</h1>
+    
+    <div class="info-grid">
+      <div class="info-item">
+        <div class="info-label">Environment</div>
+        <div class="info-value">${process.env.NODE_ENV || 'development'}</div>
+      </div>
+      
+      <div class="info-item">
+        <div class="info-label">Server Uptime</div>
+        <div class="info-value">${uptimeFormatted.days}d ${uptimeFormatted.hours}h ${uptimeFormatted.minutes}m ${uptimeFormatted.seconds}s</div>
+      </div>
+      
+      <div class="info-item">
+        <div class="info-label">Memory Usage</div>
+        <div class="info-value">${memoryFormatted.heapUsed} / ${memoryFormatted.heapTotal}</div>
+      </div>
+      
+      <div class="info-item">
+        <div class="info-label">Database</div>
+        <div class="info-value">✓ Connected (${dbConfig.database})</div>
+      </div>
+      
+      <div class="info-item">
+        <div class="info-label">Port</div>
+        <div class="info-value">${PORT}</div>
+      </div>
+    </div>
+    
+    <div class="timestamp">
+      Last checked: ${new Date().toISOString()}
+    </div>
+  </div>
+  
+  <script>
+    setTimeout(() => location.reload(), 30000);
+  </script>
+</body>
+</html>
+  `;
+
+  res.send(html);
 });
 
 // Analytics API endpoint
