@@ -30,12 +30,7 @@ dist-ssr
 # service-accounts
 service-accounts/*.json
 
-.env
-
 service-account.json
-
-.env
-.env
 
 # ignore git workflow files
 # .github/workflows/*.yml
