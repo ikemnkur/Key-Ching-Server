@@ -584,7 +584,7 @@ server.get('/health', (req, res) => {
       
       <div class="info-item">
         <div class="info-label">Database</div>
-        <div class="info-value">✓ Connected (${dbConfig.database})</div>
+        <div class="info-value">Configured (${dbConfig.database})</div>
       </div>
       
       <div class="info-item">
@@ -599,7 +599,28 @@ server.get('/health', (req, res) => {
   </div>
   
   <script>
-    setTimeout(() => location.reload(), 30000);
+    (function() {
+      const RELOAD_INTERVAL = 30000;
+
+      function scheduleReload() {
+        return setTimeout(() => {
+          if (document.visibilityState === 'visible') {
+            location.reload();
+          }
+        }, RELOAD_INTERVAL);
+      }
+
+      let reloadTimeoutId = scheduleReload();
+
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          clearTimeout(reloadTimeoutId);
+          reloadTimeoutId = scheduleReload();
+        } else {
+          clearTimeout(reloadTimeoutId);
+        }
+      });
+    })();
   </script>
 </body>
 </html>
