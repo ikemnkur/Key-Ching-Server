@@ -1,5 +1,6 @@
 
 .env
+env.yaml
 
 # Logs
 logs
@@ -43,3 +44,4 @@ service-account.json
 app.yaml
 dist/
 
+setup-secrets.sh

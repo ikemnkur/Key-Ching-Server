@@ -30,5 +30,5 @@ jobs:
         with:
           # List all service config files and dispatch.yaml
           deliverables: 'app.yaml'
-          project_id: ${{ vars.key-ching-server }}
+          project_id: 'key-ching-server'
           promote: true # Automatically route traffic to the new versions
