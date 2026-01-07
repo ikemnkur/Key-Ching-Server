@@ -35,3 +35,11 @@ service-account.json
 
 .env
 .env
+
+# ignore git workflow files
+# .github/workflows/*.yml
+
+# ignore build files / app.yaml deploy files
+app.yaml
+dist/
+

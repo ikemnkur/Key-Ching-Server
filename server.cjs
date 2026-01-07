@@ -23,6 +23,17 @@ const dbConfig = {
 // Create connection pool
 const pool = mysql.createPool(dbConfig);
 
+// Analytics tracking
+const analytics = {
+  visitors: new Set(), // Unique IP addresses
+  users: new Set(), // Unique user accounts
+  totalRequests: 0,
+  dataTx: 0, // Data transmitted (bytes)
+  dataRx: 0, // Data received (bytes)
+  endpointCalls: {}, // Tally of each endpoint
+  startTime: Date.now()
+};
+
 // Middleware
 // server.use(cors({
 //   origin: process.env.FRONTEND_URL || '*',
@@ -96,11 +107,352 @@ server.use(express.urlencoded({ extended: true, limit: '10mb' }));
 //   next();
 // });
 
-// Request logging middleware
+// Request logging middleware with analytics
 server.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+  
+  // Track visitor IP
+  const ip = req.ip || req.connection.remoteAddress || req.socket.remoteAddress;
+  if (ip) {
+    analytics.visitors.add(ip);
+  }
+  
+  // Track total requests
+  analytics.totalRequests++;
+  
+  // Track data received (request size)
+  const contentLength = parseInt(req.headers['content-length']) || 0;
+  analytics.dataRx += contentLength;
+  
+  // Track endpoint calls
+  const endpoint = `${req.method} ${req.path}`;
+  analytics.endpointCalls[endpoint] = (analytics.endpointCalls[endpoint] || 0) + 1;
+  
+  // Track data transmitted (response size)
+  const originalSend = res.send;
+  res.send = function(data) {
+    if (data) {
+      const size = Buffer.byteLength(typeof data === 'string' ? data : JSON.stringify(data));
+      analytics.dataTx += size;
+    }
+    originalSend.call(this, data);
+  };
+  
   next();
 });
+
+// Serve static files from public directory
+server.use(express.static('public'));
+
+// Root route
+server.get('/', (req, res) => {
+  res.sendFile(__dirname + '/public/index.html');
+});
+
+
+
+// Server landing page route
+server.get('/server', async (req, res) => {
+  try {
+    const uptime = process.uptime();
+    const uptimeFormatted = {
+      days: Math.floor(uptime / 86400),
+      hours: Math.floor((uptime % 86400) / 3600),
+      minutes: Math.floor((uptime % 3600) / 60),
+      seconds: Math.floor(uptime % 60)
+    };
+
+    const memoryUsage = process.memoryUsage();
+    const memoryFormatted = {
+      rss: `${Math.round(memoryUsage.rss / 1024 / 1024)} MB`,
+      heapTotal: `${Math.round(memoryUsage.heapTotal / 1024 / 1024)} MB`,
+      heapUsed: `${Math.round(memoryUsage.heapUsed / 1024 / 1024)} MB`,
+      external: `${Math.round(memoryUsage.external / 1024 / 1024)} MB`
+    };
+
+    // Get database stats
+    const [dbStats] = await pool.execute('SHOW STATUS LIKE "Threads_connected"');
+    const dbConnections = dbStats[0]?.Value || 'N/A';
+
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Key-Ching Server - Dashboard</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #333;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .header {
+      text-align: center;
+      color: white;
+      margin-bottom: 40px;
+    }
+    .header h1 {
+      font-size: 3em;
+      margin-bottom: 10px;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+    }
+    .header p {
+      font-size: 1.2em;
+      opacity: 0.9;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+    .stat-card {
+      background: white;
+      border-radius: 12px;
+      padding: 25px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+      transition: transform 0.3s ease;
+    }
+    .stat-card:hover {
+      transform: translateY(-5px);
+    }
+    .stat-card h3 {
+      color: #667eea;
+      margin-bottom: 15px;
+      font-size: 1.1em;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .stat-value {
+      font-size: 2em;
+      font-weight: bold;
+      color: #333;
+      margin: 10px 0;
+    }
+    .stat-label {
+      color: #666;
+      font-size: 0.9em;
+    }
+    .console-box {
+      background: #1e1e1e;
+      border-radius: 12px;
+      padding: 20px;
+      color: #d4d4d4;
+      font-family: 'Courier New', monospace;
+      font-size: 0.9em;
+      max-height: 400px;
+      overflow-y: auto;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+    }
+    .console-box h3 {
+      color: #4ec9b0;
+      margin-bottom: 15px;
+    }
+    .log-entry {
+      padding: 5px 0;
+      border-bottom: 1px solid #333;
+    }
+    .log-time {
+      color: #858585;
+    }
+    .log-error {
+      color: #f48771;
+    }
+    .log-info {
+      color: #4ec9b0;
+    }
+    .log-warn {
+      color: #dcdcaa;
+    }
+    .status-indicator {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #4caf50;
+      animation: pulse 2s infinite;
+      margin-right: 8px;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    .endpoints {
+      background: white;
+      border-radius: 12px;
+      padding: 25px;
+      margin-top: 20px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    }
+    .endpoints h3 {
+      color: #667eea;
+      margin-bottom: 15px;
+    }
+    .endpoint-item {
+      padding: 10px;
+      margin: 5px 0;
+      background: #f5f5f5;
+      border-radius: 6px;
+      font-family: monospace;
+    }
+    .method {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-weight: bold;
+      margin-right: 10px;
+      font-size: 0.85em;
+    }
+    .get { background: #61affe; color: white; }
+    .post { background: #49cc90; color: white; }
+    .patch { background: #fca130; color: white; }
+    .delete { background: #f93e3e; color: white; }
+    .request-count {
+      float: right;
+      background: #667eea;
+      color: white;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 0.85em;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🔑 Key-Ching Server</h1>
+      <p><span class="status-indicator"></span>Server is running</p>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-card">
+        <h3>⏱️ Uptime</h3>
+        <div class="stat-value">${uptimeFormatted.days}d ${uptimeFormatted.hours}h ${uptimeFormatted.minutes}m</div>
+        <div class="stat-label">${Math.floor(uptime)} seconds total</div>
+      </div>
+
+      <div class="stat-card">
+        <h3>💾 Memory Usage</h3>
+        <div class="stat-value">${memoryFormatted.heapUsed}</div>
+        <div class="stat-label">Heap: ${memoryFormatted.heapTotal}</div>
+      </div>
+
+      <div class="stat-card">
+        <h3>🔌 Database</h3>
+        <div class="stat-value">${dbConnections}</div>
+        <div class="stat-label">Active connections</div>
+      </div>
+
+      <div class="stat-card">
+        <h3>🌐 Environment</h3>
+        <div class="stat-value">${process.env.NODE_ENV || 'development'}</div>
+        <div class="stat-label">Port: ${PORT}</div>
+      </div>
+
+      <div class="stat-card">
+        <h3>👥 Visitors</h3>
+        <div class="stat-value">${analytics.visitors.size}</div>
+        <div class="stat-label">Unique IP addresses</div>
+      </div>
+
+      <div class="stat-card">
+        <h3>👤 Users</h3>
+        <div class="stat-value">${analytics.users.size}</div>
+        <div class="stat-label">Registered accounts accessed</div>
+      </div>
+
+      <div class="stat-card">
+        <h3>📊 Total Requests</h3>
+        <div class="stat-value">${analytics.totalRequests.toLocaleString()}</div>
+        <div class="stat-label">Since server start</div>
+      </div>
+
+      <div class="stat-card">
+        <h3>📤 Data Transmitted</h3>
+        <div class="stat-value">${(analytics.dataTx / 1024 / 1024).toFixed(2)} MB</div>
+        <div class="stat-label">Total sent: ${(analytics.dataTx / 1024).toFixed(2)} KB</div>
+      </div>
+
+      <div class="stat-card">
+        <h3>📥 Data Received</h3>
+        <div class="stat-value">${(analytics.dataRx / 1024 / 1024).toFixed(2)} MB</div>
+        <div class="stat-label">Total received: ${(analytics.dataRx / 1024).toFixed(2)} KB</div>
+      </div>
+    </div>
+
+    <div class="console-box">
+      <h3>📋 Server Console</h3>
+      <div id="console-logs">
+        <div class="log-entry">
+          <span class="log-time">[${new Date().toISOString()}]</span>
+          <span class="log-info">INFO:</span> Server started successfully
+        </div>
+        <div class="log-entry">
+          <span class="log-time">[${new Date().toISOString()}]</span>
+          <span class="log-info">INFO:</span> Database connection established
+        </div>
+        <div class="log-entry">
+          <span class="log-time">[${new Date().toISOString()}]</span>
+          <span class="log-info">INFO:</span> CORS configured for multiple origins
+        </div>
+      </div>
+    </div>
+
+    <div class="endpoints">
+      <h3>🛣️ Active API Endpoints</h3>
+      ${Object.entries(analytics.endpointCalls)
+        .sort((a, b) => b[1] - a[1])
+        .map(([endpoint, count]) => {
+          const [method, ...pathParts] = endpoint.split(' ');
+          const path = pathParts.join(' ');
+          const methodClass = method.toLowerCase();
+          return `<div class="endpoint-item">
+            <span class="method ${methodClass}">${method}</span> ${path}
+            <span class="request-count">${count}</span>
+          </div>`;
+        }).join('')}
+    </div>
+
+     <div class="endpoints">
+      <h3>🛣️ Available API Endpoints</h3>
+      <div class="endpoint-item"><span class="method get">GET</span> /health - Health check</div>
+      <div class="endpoint-item"><span class="method post">POST</span> /api/auth/login - User login</div>
+      <div class="endpoint-item"><span class="method post">POST</span> /api/auth/register - User registration</div>
+      <div class="endpoint-item"><span class="method post">POST</span> /api/auth/logout - User logout</div>
+      <div class="endpoint-item"><span class="method get">GET</span> /api/wallet/balance/:username - Get wallet balance</div>
+      <div class="endpoint-item"><span class="method post">POST</span> /api/unlock/:keyId - Unlock a key</div>
+      <div class="endpoint-item"><span class="method get">GET</span> /api/listings/:username - User listings</div>
+      <div class="endpoint-item"><span class="method post">POST</span> /api/create-key - Create new key listing</div>
+      <div class="endpoint-item"><span class="method get">GET</span> /api/notifications/:username - Get notifications</div>
+      <div class="endpoint-item"><span class="method get">GET</span> /api/purchases/:username - Get purchase history</div>
+      <div class="endpoint-item"><span class="method post">POST</span> /api/profile-picture/:username - Upload profile picture</div>
+    </div>
+  </div>
+
+  <script>
+    // Auto-refresh every 30 seconds
+    setTimeout(() => location.reload(), 30000);
+  </script>
+</body>
+</html>
+    `;
+
+    res.send(html);
+  } catch (error) {
+    console.error('Landing page error:', error);
+    res.status(500).send('<h1>Error loading dashboard</h1>');
+  }
+});
+
 
 // Health check endpoint
 server.get('/health', (req, res) => {
@@ -109,6 +461,26 @@ server.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     environment: process.env.NODE_ENV || 'development'
+  });
+});
+
+// Analytics API endpoint
+server.get('/api/analytics', (req, res) => {
+  res.json({
+    visitors: analytics.visitors.size,
+    users: analytics.users.size,
+    totalRequests: analytics.totalRequests,
+    dataTx: analytics.dataTx,
+    dataRx: analytics.dataRx,
+    dataTxMB: (analytics.dataTx / 1024 / 1024).toFixed(2),
+    dataRxMB: (analytics.dataRx / 1024 / 1024).toFixed(2),
+    endpointCalls: analytics.endpointCalls,
+    uptime: Date.now() - analytics.startTime,
+    uptimeFormatted: {
+      days: Math.floor((Date.now() - analytics.startTime) / 86400000),
+      hours: Math.floor(((Date.now() - analytics.startTime) % 86400000) / 3600000),
+      minutes: Math.floor(((Date.now() - analytics.startTime) % 3600000) / 60000)
+    }
   });
 });
 
@@ -165,6 +537,11 @@ server.post('/api/auth/login', async (req, res) => {
 
       // Generate a proper JWT-like token (in production, use actual JWT)
       const token = Buffer.from(`${user.id}_${Date.now()}_${Math.random()}`).toString('base64');
+
+      // Track authenticated user
+      if (user.username) {
+        analytics.users.add(user.username);
+      }
 
       res.json({
         success: true,
@@ -261,6 +638,11 @@ server.post('/api/user', async (req, res) => {
 
       // Generate a proper JWT-like token (in production, use actual JWT)
       // const token = Buffer.from(`${user.id}_${Date.now()}_${Math.random()}`).toString('base64');
+
+      // Track authenticated user
+      if (user.username) {
+        analytics.users.add(user.username);
+      }
 
       if (user.accountType === 'seller') {
         res.json({
@@ -1805,17 +2187,17 @@ server.post('/api/lookup-transaction', async (req, res) => {
   try {
     const { sendAddress, blockchain, transactionHash } = req.body;
     console.log('Lookup transaction body -request:', { sendAddress, blockchain, transactionHash });
-    
+
     let tx = [];
     let result = null;
-    
+
     if (blockchain === "bitcoin" || blockchain === "BTC") {
       [tx] = await pool.execute(
         `SELECT * FROM CryptoTransactions_BTC WHERE direction = 'IN' AND hash = ?`,
         [transactionHash]
       );
       console.log('Lookup transaction result for bitcoin:', tx.length > 0 ? tx[0] : 'No transaction found');
-      
+
       if (tx.length === 0) {
         return res.status(404).json({ error: 'Transaction not found' });
       }
@@ -1824,10 +2206,10 @@ server.post('/api/lookup-transaction', async (req, res) => {
     else if (blockchain === "ethereum" || blockchain === "ETH") {
       [tx] = await pool.execute(
         `SELECT * FROM CryptoTransactions_ETH WHERE direction = 'IN' AND hash = ?`,
-        [ transactionHash]
+        [transactionHash]
       );
       console.log('Lookup transaction result for ethereum:', tx.length > 0 ? tx[0] : 'No transaction found');
-      
+
       if (tx.length === 0) {
         return res.status(404).json({ error: 'Transaction not found' });
       }
@@ -1839,7 +2221,7 @@ server.post('/api/lookup-transaction', async (req, res) => {
         [transactionHash]
       );
       console.log('Lookup transaction result for litecoin:', tx.length > 0 ? tx[0] : 'No transaction found');
-      
+
       if (tx.length === 0) {
         return res.status(404).json({ error: 'Transaction not found' });
       }
@@ -1851,7 +2233,7 @@ server.post('/api/lookup-transaction', async (req, res) => {
         [transactionHash]
       );
       console.log('Lookup transaction result for solana:', tx.length > 0 ? tx[0] : 'No transaction found');
-      
+
       if (tx.length === 0) {
         return res.status(404).json({ error: 'Transaction not found' });
       }
@@ -2433,6 +2815,203 @@ server.patch('/api/:table/:id', async (req, res) => {
 });
 
 
+// ============================================
+// DATABASE MANAGEMENT ENDPOINTS
+// ============================================
+
+// Serve database manager HTML page
+server.get('/db-manager', (req, res) => {
+  res.sendFile(__dirname + '/public/db-manager.html');
+});
+
+// Get database statistics
+server.get('/api/db-stats', async (req, res) => {
+  try {
+    // Get database size
+    const [sizeResult] = await pool.execute(`
+      SELECT 
+        ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS size_mb
+      FROM information_schema.TABLES 
+      WHERE table_schema = ?
+    `, [dbConfig.database]);
+
+    // Get total tables
+    const [tablesResult] = await pool.execute(`
+      SELECT COUNT(*) as count 
+      FROM information_schema.TABLES 
+      WHERE table_schema = ?
+    `, [dbConfig.database]);
+
+    // Get active connections
+    const [connectionsResult] = await pool.execute(`
+      SELECT COUNT(*) as count 
+      FROM information_schema.PROCESSLIST 
+      WHERE DB = ?
+    `, [dbConfig.database]);
+
+    // Get total records across all tables
+    const [allTables] = await pool.execute(`
+      SELECT table_name 
+      FROM information_schema.TABLES 
+      WHERE table_schema = ?
+    `, [dbConfig.database]);
+
+    let totalRecords = 0;
+    for (const table of allTables) {
+      const [countResult] = await pool.execute(`SELECT COUNT(*) as count FROM ${table.table_name}`);
+      totalRecords += countResult[0].count;
+    }
+
+    // Get table details
+    const [tableDetails] = await pool.execute(`
+      SELECT 
+        table_name,
+        table_rows,
+        ROUND((data_length + index_length) / 1024 / 1024, 2) AS size_mb,
+        engine,
+        table_collation
+      FROM information_schema.TABLES 
+      WHERE table_schema = ?
+      ORDER BY table_name
+    `, [dbConfig.database]);
+
+    res.json({
+      databaseSize: sizeResult[0].size_mb,
+      totalTables: tablesResult[0].count,
+      activeConnections: connectionsResult[0].count,
+      totalRecords: totalRecords,
+      tables: tableDetails,
+      databaseName: dbConfig.database,
+      host: dbConfig.host,
+      port: dbConfig.port
+    });
+  } catch (error) {
+    console.error('Database stats error:', error);
+    res.status(500).json({ error: 'Failed to retrieve database statistics', message: error.message });
+  }
+});
+
+// Get list of tables with details
+server.get('/api/db-tables', async (req, res) => {
+  try {
+    const [tables] = await pool.execute(`
+      SELECT 
+        table_name as name,
+        table_rows as rows,
+        ROUND((data_length + index_length) / 1024 / 1024, 2) AS size,
+        engine,
+        create_time,
+        update_time
+      FROM information_schema.TABLES 
+      WHERE table_schema = ?
+      ORDER BY table_name
+    `, [dbConfig.database]);
+
+    const formattedTables = tables.map(table => ({
+      name: table.name,
+      rows: table.rows,
+      size: `${table.size} MB`,
+      engine: table.engine,
+      created: table.create_time,
+      updated: table.update_time
+    }));
+
+    res.json({ tables: formattedTables });
+  } catch (error) {
+    console.error('Get tables error:', error);
+    res.status(500).json({ error: 'Failed to retrieve tables', message: error.message });
+  }
+});
+
+// Get records from a specific table with pagination and search
+server.get('/api/db-records/:tableName', async (req, res) => {
+  try {
+    const { tableName } = req.params;
+    const limit = parseInt(req.query.limit) || 50;
+    const offset = parseInt(req.query.offset) || 0;
+    const search = req.query.search || '';
+
+    // Validate table name exists
+    const [tableCheck] = await pool.execute(`
+      SELECT table_name 
+      FROM information_schema.TABLES 
+      WHERE table_schema = ? AND table_name = ?
+    `, [dbConfig.database, tableName]);
+
+    if (tableCheck.length === 0) {
+      return res.status(404).json({ error: 'Table not found' });
+    }
+
+    // Get total count
+    let countQuery = `SELECT COUNT(*) as total FROM ${tableName}`;
+    let dataQuery = `SELECT * FROM ${tableName}`;
+    const params = [];
+
+    // Add search filter if provided
+    if (search) {
+      // Get column names
+      const [columns] = await pool.execute(`
+        SELECT COLUMN_NAME 
+        FROM information_schema.COLUMNS 
+        WHERE table_schema = ? AND table_name = ?
+      `, [dbConfig.database, tableName]);
+
+      const searchConditions = columns.map(col => `${col.COLUMN_NAME} LIKE ?`).join(' OR ');
+      const searchParams = columns.map(() => `%${search}%`);
+
+      countQuery += ` WHERE ${searchConditions}`;
+      dataQuery += ` WHERE ${searchConditions}`;
+      params.push(...searchParams);
+    }
+
+    // Get total count
+    const [countResult] = await pool.execute(countQuery, params);
+    const total = countResult[0].total;
+
+    // Get records with pagination
+    dataQuery += ` LIMIT ? OFFSET ?`;
+    const [records] = await pool.execute(dataQuery, [...params, limit, offset]);
+
+    res.json({
+      records,
+      total,
+      limit,
+      offset
+    });
+  } catch (error) {
+    console.error('Get records error:', error);
+    res.status(500).json({ error: 'Failed to retrieve records', message: error.message });
+  }
+});
+
+// Execute raw SQL query (SELECT only for safety)
+server.post('/api/db-query', async (req, res) => {
+  try {
+    const { query } = req.body;
+
+    if (!query) {
+      return res.status(400).json({ error: 'Query is required' });
+    }
+
+    // Only allow SELECT queries for safety
+    const trimmedQuery = query.trim().toUpperCase();
+    if (!trimmedQuery.startsWith('SELECT') && !trimmedQuery.startsWith('SHOW') && !trimmedQuery.startsWith('DESCRIBE')) {
+      return res.status(403).json({ error: 'Only SELECT, SHOW, and DESCRIBE queries are allowed' });
+    }
+
+    const [results] = await pool.execute(query);
+
+    res.json({
+      success: true,
+      results,
+      rowCount: results.length
+    });
+  } catch (error) {
+    console.error('Query execution error:', error);
+    res.status(500).json({ error: 'Query execution failed', message: error.message });
+  }
+});
+
 
 // Global error handler
 server.use((error, req, res, next) => {
@@ -2456,6 +3035,7 @@ server.listen(PORT, async () => {
     console.log('🚀 Express Server with MySQL is running on port', PORT);
     console.log('�️  Database: KeyChingDB (MySQL)');
     console.log('🌐 API Base URL: http://localhost:' + PORT + '/api');
+    console.log('🗄️  Database Manager: http://localhost:' + PORT + '/db-manager');
     console.log('📋 Available endpoints:');
     console.log('   - GET /api/userData');
     console.log('   - GET /api/createdKeys');
@@ -2471,6 +3051,9 @@ server.listen(PORT, async () => {
     console.log('   - GET /api/:table');
     console.log('   - GET /api/:table/:id');
     console.log('   - PATCH /api/:table/:id');
+    console.log('   - GET /api/db-stats (Database statistics)');
+    console.log('   - GET /api/db-tables (List all tables)');
+    console.log('   - GET /api/db-records/:tableName (View table records)');
   } catch (error) {
     console.error('❌ Failed to connect to MySQL database:', error.message);
     console.log('📝 Please ensure:');
@@ -2593,3 +3176,5 @@ async function FetchRecentTransactionsCron() {
     console.error('❌ Error fetching recent transactions:', error);
   }
 }
+
+

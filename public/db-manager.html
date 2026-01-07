@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Database Manager - KeyChing Server</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            padding: 20px 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .header h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 5px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .stat-card h3 {
+            color: #666;
+            font-size: 14px;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+        }
+
+        .stat-card .value {
+            color: #333;
+            font-size: 32px;
+            font-weight: bold;
+        }
+
+        .stat-card .label {
+            color: #999;
+            font-size: 12px;
+            margin-top: 5px;
+        }
+
+        .main-panel {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .tabs {
+            display: flex;
+            background: #f5f5f5;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .tab {
+            padding: 15px 25px;
+            cursor: pointer;
+            border: none;
+            background: transparent;
+            font-size: 14px;
+            font-weight: 500;
+            color: #666;
+            transition: all 0.3s;
+        }
+
+        .tab:hover {
+            background: #e8e8e8;
+        }
+
+        .tab.active {
+            background: white;
+            color: #667eea;
+            border-bottom: 2px solid #667eea;
+            margin-bottom: -2px;
+        }
+
+        .tab-content {
+            padding: 30px;
+        }
+
+        .tab-panel {
+            display: none;
+        }
+
+        .tab-panel.active {
+            display: block;
+        }
+
+        .search-bar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .search-bar input,
+        .search-bar select {
+            padding: 10px 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        .search-bar input {
+            flex: 1;
+        }
+
+        .search-bar button {
+            padding: 10px 20px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background 0.3s;
+        }
+
+        .search-bar button:hover {
+            background: #5568d3;
+        }
+
+        .table-container {
+            overflow-x: auto;
+            margin-top: 20px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+
+        table th {
+            background: #f5f5f5;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            color: #333;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        table td {
+            padding: 12px;
+            border-bottom: 1px solid #e0e0e0;
+            color: #666;
+        }
+
+        table tr:hover {
+            background: #f9f9f9;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+
+        .success {
+            background: #efe;
+            color: #3c3;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+
+        .table-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .table-item {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s;
+            border: 2px solid transparent;
+        }
+
+        .table-item:hover {
+            background: #e8e8f5;
+            border-color: #667eea;
+        }
+
+        .table-item.active {
+            background: #667eea;
+            color: white;
+        }
+
+        .table-item h4 {
+            font-size: 16px;
+            margin-bottom: 5px;
+        }
+
+        .table-item p {
+            font-size: 12px;
+            opacity: 0.8;
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .pagination button {
+            padding: 8px 15px;
+            border: 1px solid #ddd;
+            background: white;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+
+        .pagination button:hover:not(:disabled) {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        .pagination button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .json-view {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+
+        .refresh-btn {
+            float: right;
+            padding: 8px 15px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: background 0.3s;
+        }
+
+        .refresh-btn:hover {
+            background: #5568d3;
+        }
+
+        .record-count {
+            color: #666;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🗄️ Database Manager</h1>
+            <p>KeyChing Server - MySQL Database Administration</p>
+        </div>
+
+        <div class="stats-grid" id="statsGrid">
+            <div class="stat-card">
+                <h3>Database Size</h3>
+                <div class="value" id="dbSize">--</div>
+                <div class="label">Total Size (MB)</div>
+            </div>
+            <div class="stat-card">
+                <h3>Total Tables</h3>
+                <div class="value" id="totalTables">--</div>
+                <div class="label">Active Tables</div>
+            </div>
+            <div class="stat-card">
+                <h3>Active Connections</h3>
+                <div class="value" id="activeConnections">--</div>
+                <div class="label">Current Connections</div>
+            </div>
+            <div class="stat-card">
+                <h3>Total Records</h3>
+                <div class="value" id="totalRecords">--</div>
+                <div class="label">All Tables</div>
+            </div>
+        </div>
+
+        <div class="main-panel">
+            <div class="tabs">
+                <button class="tab active" data-tab="overview">Overview</button>
+                <button class="tab" data-tab="tables">Tables</button>
+                <button class="tab" data-tab="records">Records</button>
+                <button class="tab" data-tab="queries">Raw Query</button>
+            </div>
+
+            <div class="tab-content">
+                <div id="overview" class="tab-panel active">
+                    <h2>Database Overview</h2>
+                    <button class="refresh-btn" onclick="loadDatabaseStats()">🔄 Refresh</button>
+                    <div id="overviewContent" class="loading">Loading database information...</div>
+                </div>
+
+                <div id="tables" class="tab-panel">
+                    <h2>Database Tables</h2>
+                    <button class="refresh-btn" onclick="loadTables()">🔄 Refresh</button>
+                    <div id="tablesContent" class="loading">Loading tables...</div>
+                </div>
+
+                <div id="records" class="tab-panel">
+                    <h2>Table Records</h2>
+                    <div class="search-bar">
+                        <select id="tableSelect">
+                            <option value="">Select a table...</option>
+                        </select>
+                        <input type="text" id="searchInput" placeholder="Search records...">
+                        <button onclick="searchRecords()">Search</button>
+                    </div>
+                    <div id="recordsContent" class="loading">Select a table to view records</div>
+                </div>
+
+                <div id="queries" class="tab-panel">
+                    <h2>Raw SQL Query</h2>
+                    <div style="margin-bottom: 20px;">
+                        <textarea id="sqlQuery" rows="5" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-family: 'Courier New', monospace;" placeholder="Enter SQL query (SELECT only for safety)..."></textarea>
+                    </div>
+                    <button class="search-bar button" onclick="executeQuery()">Execute Query</button>
+                    <div id="queryResults"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+        let currentTable = null;
+        let currentPage = 1;
+        const recordsPerPage = 50;
+
+        // Tab switching
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                const tabName = tab.dataset.tab;
+                
+                // Update active tab
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                
+                // Update active panel
+                document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+                document.getElementById(tabName).classList.add('active');
+                
+                // Load data if needed
+                if (tabName === 'tables' && !document.getElementById('tablesContent').querySelector('.table-list')) {
+                    loadTables();
+                }
+            });
+        });
+
+        // Load database stats
+        async function loadDatabaseStats() {
+            try {
+                const response = await fetch(`${API_BASE}/api/db-stats`);
+                const data = await response.json();
+                
+                document.getElementById('dbSize').textContent = data.databaseSize || '--';
+                document.getElementById('totalTables').textContent = data.totalTables || '--';
+                document.getElementById('activeConnections').textContent = data.activeConnections || '--';
+                document.getElementById('totalRecords').textContent = data.totalRecords || '--';
+                
+                // Update overview
+                const overviewContent = document.getElementById('overviewContent');
+                overviewContent.innerHTML = `
+                    <div class="json-view">
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Error loading stats:', error);
+                document.getElementById('overviewContent').innerHTML = `<div class="error">Error loading database stats: ${error.message}</div>`;
+            }
+        }
+
+        // Load tables
+        async function loadTables() {
+            try {
+                const response = await fetch(`${API_BASE}/api/db-tables`);
+                const data = await response.json();
+                
+                const tablesContent = document.getElementById('tablesContent');
+                const tableSelect = document.getElementById('tableSelect');
+                
+                // Update table select dropdown
+                tableSelect.innerHTML = '<option value="">Select a table...</option>';
+                data.tables.forEach(table => {
+                    const option = document.createElement('option');
+                    option.value = table.name;
+                    option.textContent = `${table.name} (${table.rows} rows)`;
+                    tableSelect.appendChild(option);
+                });
+                
+                // Display tables grid
+                let html = '<div class="table-list">';
+                data.tables.forEach(table => {
+                    html += `
+                        <div class="table-item" onclick="selectTable('${table.name}')">
+                            <h4>${table.name}</h4>
+                            <p>${table.rows} rows • ${table.size}</p>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+                
+                tablesContent.innerHTML = html;
+            } catch (error) {
+                console.error('Error loading tables:', error);
+                document.getElementById('tablesContent').innerHTML = `<div class="error">Error loading tables: ${error.message}</div>`;
+            }
+        }
+
+        // Select table
+        function selectTable(tableName) {
+            currentTable = tableName;
+            document.getElementById('tableSelect').value = tableName;
+            
+            // Switch to records tab
+            document.querySelector('.tab[data-tab="records"]').click();
+            
+            // Load records
+            loadRecords(tableName);
+        }
+
+        // Load records
+        async function loadRecords(tableName, page = 1, search = '') {
+            if (!tableName) return;
+            
+            currentPage = page;
+            const recordsContent = document.getElementById('recordsContent');
+            recordsContent.innerHTML = '<div class="loading">Loading records...</div>';
+            
+            try {
+                const offset = (page - 1) * recordsPerPage;
+                const url = `${API_BASE}/api/db-records/${tableName}?limit=${recordsPerPage}&offset=${offset}&search=${encodeURIComponent(search)}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (data.records.length === 0) {
+                    recordsContent.innerHTML = '<p style="text-align: center; color: #999; padding: 40px;">No records found</p>';
+                    return;
+                }
+                
+                // Build table
+                let html = `<div class="record-count">Total: ${data.total} records | Showing ${offset + 1}-${Math.min(offset + recordsPerPage, data.total)}</div>`;
+                html += '<div class="table-container"><table><thead><tr>';
+                
+                // Headers
+                const keys = Object.keys(data.records[0]);
+                keys.forEach(key => {
+                    html += `<th>${key}</th>`;
+                });
+                html += '</tr></thead><tbody>';
+                
+                // Rows
+                data.records.forEach(record => {
+                    html += '<tr>';
+                    keys.forEach(key => {
+                        let value = record[key];
+                        if (typeof value === 'object' && value !== null) {
+                            value = JSON.stringify(value);
+                        }
+                        if (value === null) value = '<i>NULL</i>';
+                        if (typeof value === 'string' && value.length > 50) {
+                            value = value.substring(0, 50) + '...';
+                        }
+                        html += `<td>${value}</td>`;
+                    });
+                    html += '</tr>';
+                });
+                
+                html += '</tbody></table></div>';
+                
+                // Pagination
+                const totalPages = Math.ceil(data.total / recordsPerPage);
+                if (totalPages > 1) {
+                    html += '<div class="pagination">';
+                    html += `<button onclick="loadRecords('${tableName}', ${page - 1}, '${search}')" ${page === 1 ? 'disabled' : ''}>Previous</button>`;
+                    html += `<span>Page ${page} of ${totalPages}</span>`;
+                    html += `<button onclick="loadRecords('${tableName}', ${page + 1}, '${search}')" ${page === totalPages ? 'disabled' : ''}>Next</button>`;
+                    html += '</div>';
+                }
+                
+                recordsContent.innerHTML = html;
+            } catch (error) {
+                console.error('Error loading records:', error);
+                recordsContent.innerHTML = `<div class="error">Error loading records: ${error.message}</div>`;
+            }
+        }
+
+        // Search records
+        function searchRecords() {
+            const tableName = document.getElementById('tableSelect').value;
+            const search = document.getElementById('searchInput').value;
+            
+            if (!tableName) {
+                alert('Please select a table first');
+                return;
+            }
+            
+            loadRecords(tableName, 1, search);
+        }
+
+        // Execute raw query
+        async function executeQuery() {
+            const query = document.getElementById('sqlQuery').value.trim();
+            const resultsDiv = document.getElementById('queryResults');
+            
+            if (!query) {
+                resultsDiv.innerHTML = '<div class="error">Please enter a query</div>';
+                return;
+            }
+            
+            resultsDiv.innerHTML = '<div class="loading">Executing query...</div>';
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/db-query`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query })
+                });
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    resultsDiv.innerHTML = `<div class="error">${data.error}</div>`;
+                    return;
+                }
+                
+                resultsDiv.innerHTML = `
+                    <div class="success">Query executed successfully!</div>
+                    <div class="json-view">
+                        <pre>${JSON.stringify(data.results, null, 2)}</pre>
+                    </div>
+                `;
+            } catch (error) {
+                resultsDiv.innerHTML = `<div class="error">Error executing query: ${error.message}</div>`;
+            }
+        }
+
+        // Table select change
+        document.getElementById('tableSelect').addEventListener('change', (e) => {
+            const tableName = e.target.value;
+            if (tableName) {
+                loadRecords(tableName);
+            }
+        });
+
+        // Search on Enter key
+        document.getElementById('searchInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                searchRecords();
+            }
+        });
+
+        // Initial load
+        loadDatabaseStats();
+    </script>
+</body>
+</html>
