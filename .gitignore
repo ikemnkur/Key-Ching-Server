@@ -36,8 +36,5 @@ service-account.json
 # .github/workflows/*.yml
 
 # ignore build files / app.yaml deploy files
-app.yaml
-dist/
-
 setup-secrets.sh
-.env
+

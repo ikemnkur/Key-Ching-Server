@@ -1,0 +1,35 @@
+runtime: nodejs20
+
+includes:
+  - env.yaml
+
+# Non-sensitive environment variables
+env_variables:
+  DB_HOST: '34.57.139.74'
+  DB_PORT: '3306'
+  DB_USER: 'remote'
+  DB_NAME: 'KeyChingDB'
+  DB_4_ADS_NAME: 'ad_system'
+  
+  # Public API endpoints
+  SOLANA_RPC_URL: 'https://api.mainnet-beta.solana.com'
+  BTC_ESPLORA: 'https://blockstream.info/api'
+  LTC_ESPLORA: 'https://litecoinspace.org/api'
+  
+  # Non-sensitive SMTP config
+  SMTP_HOST: 'smtp.gmail.com'
+  SMTP_PORT: '587'
+  SMTP_SECURE: 'false'
+  
+  # Ad system config
+  AD_PORT: '3001'
+  MAX_FILE_SIZE: '2621440'
+  RATE_LIMIT_WINDOW_MS: '900000'
+  RATE_LIMIT_MAX_REQUESTS: '100'
+
+service: default
+
+instance_class: F1
+automatic_scaling:
+  max_instances: 1
+  min_instances: 0
