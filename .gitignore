@@ -40,3 +40,4 @@ app.yaml
 dist/
 
 setup-secrets.sh
+.env
