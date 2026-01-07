@@ -34,6 +34,59 @@ const analytics = {
   startTime: Date.now()
 };
 
+// Logs storage
+const logs = {
+  maxLogs: 500, // Keep last 500 logs
+  entries: []
+};
+
+// Override console methods to capture logs
+const originalConsoleLog = console.log;
+const originalConsoleError = console.error;
+const originalConsoleWarn = console.warn;
+
+console.log = function(...args) {
+  const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
+  logs.entries.push({
+    type: 'info',
+    message: message,
+    timestamp: new Date().toISOString(),
+    time: Date.now()
+  });
+  if (logs.entries.length > logs.maxLogs) {
+    logs.entries.shift();
+  }
+  originalConsoleLog.apply(console, args);
+};
+
+console.error = function(...args) {
+  const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
+  logs.entries.push({
+    type: 'error',
+    message: message,
+    timestamp: new Date().toISOString(),
+    time: Date.now()
+  });
+  if (logs.entries.length > logs.maxLogs) {
+    logs.entries.shift();
+  }
+  originalConsoleError.apply(console, args);
+};
+
+console.warn = function(...args) {
+  const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
+  logs.entries.push({
+    type: 'warn',
+    message: message,
+    timestamp: new Date().toISOString(),
+    time: Date.now()
+  });
+  if (logs.entries.length > logs.maxLogs) {
+    logs.entries.shift();
+  }
+  originalConsoleWarn.apply(console, args);
+};
+
 // Middleware
 // server.use(cors({
 //   origin: process.env.FRONTEND_URL || '*',
@@ -453,6 +506,356 @@ server.get('/server', async (req, res) => {
     console.error('Landing page error:', error);
     res.status(500).send('<h1>Error loading dashboard</h1>');
   }
+});
+
+// Logs viewer route
+server.get('/logs', (req, res) => {
+  const type = req.query.type || 'all'; // Filter by type: all, info, error, warn
+  const limit = parseInt(req.query.limit) || 100;
+  
+  let filteredLogs = logs.entries;
+  if (type !== 'all') {
+    filteredLogs = logs.entries.filter(log => log.type === type);
+  }
+  
+  const displayLogs = filteredLogs.slice(-limit).reverse();
+  
+  const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Server Logs - KeyChing</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, monospace;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 20px;
+    }
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    .header {
+      background: #252526;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      border-left: 4px solid #007acc;
+    }
+    .header h1 {
+      color: #4ec9b0;
+      margin-bottom: 10px;
+    }
+    .stats {
+      display: flex;
+      gap: 20px;
+      font-size: 14px;
+    }
+    .stat-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .badge {
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-weight: bold;
+      font-size: 12px;
+    }
+    .badge.info { background: #007acc; color: white; }
+    .badge.error { background: #f48771; color: white; }
+    .badge.warn { background: #dcdcaa; color: #1e1e1e; }
+    .badge.all { background: #4ec9b0; color: #1e1e1e; }
+    .controls {
+      background: #252526;
+      padding: 15px 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      display: flex;
+      gap: 15px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .controls label {
+      color: #858585;
+      font-size: 14px;
+    }
+    .controls select,
+    .controls input {
+      background: #3c3c3c;
+      border: 1px solid #555;
+      color: #d4d4d4;
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    .controls button {
+      background: #007acc;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background 0.3s;
+    }
+    .controls button:hover {
+      background: #005a9e;
+    }
+    .controls button.clear {
+      background: #f48771;
+    }
+    .controls button.clear:hover {
+      background: #d9534f;
+    }
+    .log-container {
+      background: #252526;
+      border-radius: 8px;
+      padding: 15px;
+      max-height: calc(100vh - 300px);
+      overflow-y: auto;
+    }
+    .log-entry {
+      padding: 10px 12px;
+      border-left: 3px solid transparent;
+      margin-bottom: 8px;
+      border-radius: 4px;
+      background: #1e1e1e;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .log-entry.info {
+      border-left-color: #4ec9b0;
+    }
+    .log-entry.error {
+      border-left-color: #f48771;
+      background: #2d1f1f;
+    }
+    .log-entry.warn {
+      border-left-color: #dcdcaa;
+      background: #2d2d1f;
+    }
+    .log-time {
+      color: #858585;
+      font-size: 11px;
+      margin-right: 10px;
+    }
+    .log-type {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 3px;
+      font-size: 10px;
+      font-weight: bold;
+      margin-right: 10px;
+      text-transform: uppercase;
+    }
+    .log-type.info { background: #007acc; color: white; }
+    .log-type.error { background: #f48771; color: white; }
+    .log-type.warn { background: #dcdcaa; color: #1e1e1e; }
+    .log-message {
+      color: #d4d4d4;
+      word-wrap: break-word;
+    }
+    .no-logs {
+      text-align: center;
+      padding: 40px;
+      color: #858585;
+    }
+    .auto-refresh {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .auto-refresh input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+    }
+    .scroll-to-bottom {
+      position: fixed;
+      bottom: 30px;
+      right: 30px;
+      background: #007acc;
+      color: white;
+      border: none;
+      padding: 12px 20px;
+      border-radius: 50px;
+      cursor: pointer;
+      font-size: 14px;
+      box-shadow: 0 4px 12px rgba(0, 122, 204, 0.4);
+      transition: all 0.3s;
+    }
+    .scroll-to-bottom:hover {
+      background: #005a9e;
+      transform: translateY(-2px);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>📋 Server Logs</h1>
+      <div class="stats">
+        <div class="stat-item">
+          <span class="badge all">${logs.entries.length}</span>
+          <span>Total Logs</span>
+        </div>
+        <div class="stat-item">
+          <span class="badge info">${logs.entries.filter(l => l.type === 'info').length}</span>
+          <span>Info</span>
+        </div>
+        <div class="stat-item">
+          <span class="badge warn">${logs.entries.filter(l => l.type === 'warn').length}</span>
+          <span>Warnings</span>
+        </div>
+        <div class="stat-item">
+          <span class="badge error">${logs.entries.filter(l => l.type === 'error').length}</span>
+          <span>Errors</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <label>Filter:</label>
+      <select id="typeFilter" onchange="filterLogs()">
+        <option value="all" ${type === 'all' ? 'selected' : ''}>All Types</option>
+        <option value="info" ${type === 'info' ? 'selected' : ''}>Info Only</option>
+        <option value="warn" ${type === 'warn' ? 'selected' : ''}>Warnings Only</option>
+        <option value="error" ${type === 'error' ? 'selected' : ''}>Errors Only</option>
+      </select>
+      
+      <label>Limit:</label>
+      <input type="number" id="limitInput" value="${limit}" min="10" max="500" step="10" onchange="filterLogs()">
+      
+      <div class="auto-refresh">
+        <input type="checkbox" id="autoRefresh" onchange="toggleAutoRefresh()">
+        <label for="autoRefresh">Auto-refresh (5s)</label>
+      </div>
+      
+      <button onclick="location.reload()">🔄 Refresh</button>
+      <button class="clear" onclick="clearLogs()">🗑️ Clear Logs</button>
+      <button onclick="exportLogs()">📥 Export</button>
+    </div>
+
+    <div class="log-container" id="logContainer">
+      ${displayLogs.length === 0 ? '<div class="no-logs">No logs to display</div>' : displayLogs.map(log => `
+        <div class="log-entry ${log.type}">
+          <span class="log-time">${new Date(log.timestamp).toLocaleString()}</span>
+          <span class="log-type ${log.type}">${log.type}</span>
+          <span class="log-message">${escapeHtml(log.message)}</span>
+        </div>
+      `).join('')}
+    </div>
+
+    <button class="scroll-to-bottom" onclick="scrollToBottom()">↓ Scroll to Bottom</button>
+  </div>
+
+  <script>
+    let autoRefreshInterval = null;
+
+    function filterLogs() {
+      const type = document.getElementById('typeFilter').value;
+      const limit = document.getElementById('limitInput').value;
+      window.location.href = \`/logs?type=\${type}&limit=\${limit}\`;
+    }
+
+    function toggleAutoRefresh() {
+      const checkbox = document.getElementById('autoRefresh');
+      if (checkbox.checked) {
+        autoRefreshInterval = setInterval(() => location.reload(), 5000);
+      } else {
+        if (autoRefreshInterval) {
+          clearInterval(autoRefreshInterval);
+          autoRefreshInterval = null;
+        }
+      }
+    }
+
+    function scrollToBottom() {
+      const container = document.getElementById('logContainer');
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function clearLogs() {
+      if (confirm('Are you sure you want to clear all logs?')) {
+        fetch('/api/logs/clear', { method: 'POST' })
+          .then(() => location.reload())
+          .catch(err => alert('Error clearing logs: ' + err));
+      }
+    }
+
+    function exportLogs() {
+      fetch('/api/logs/export')
+        .then(res => res.json())
+        .then(data => {
+          const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = \`server-logs-\${new Date().toISOString()}.json\`;
+          a.click();
+          URL.revokeObjectURL(url);
+        })
+        .catch(err => alert('Error exporting logs: ' + err));
+    }
+
+    // Auto-scroll to bottom on load
+    window.addEventListener('load', () => {
+      scrollToBottom();
+    });
+  </script>
+</body>
+</html>
+  `;
+  
+  function escapeHtml(text) {
+    const map = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#039;'
+    };
+    return text.replace(/[&<>"']/g, m => map[m]);
+  }
+  
+  res.send(html);
+});
+
+// API endpoint to clear logs
+server.post('/api/logs/clear', (req, res) => {
+  logs.entries = [];
+  res.json({ success: true, message: 'Logs cleared' });
+});
+
+// API endpoint to export logs
+server.get('/api/logs/export', (req, res) => {
+  res.json({
+    exportDate: new Date().toISOString(),
+    totalLogs: logs.entries.length,
+    logs: logs.entries
+  });
+});
+
+// API endpoint to get logs as JSON
+server.get('/api/logs', (req, res) => {
+  const type = req.query.type || 'all';
+  const limit = parseInt(req.query.limit) || 100;
+  
+  let filteredLogs = logs.entries;
+  if (type !== 'all') {
+    filteredLogs = logs.entries.filter(log => log.type === type);
+  }
+  
+  res.json({
+    total: filteredLogs.length,
+    logs: filteredLogs.slice(-limit).reverse()
+  });
 });
 
 
