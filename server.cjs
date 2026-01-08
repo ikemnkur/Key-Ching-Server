@@ -126,45 +126,55 @@ server.use(express.json({ limit: '10mb' }));
 server.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Admin Dashboard Page
-// // Data storage for admin page
-// let pageVisits = [];
-// let recentRequests = [];
-// const startTime = Date.now();
+// Data storage for admin page
+let pageVisits = [];
+let recentRequests = [];
+const startTime = Date.now();
 
-// // Middleware to track page visits and requests
-// server.use((req, res, next) => {
-//   const ip = req.ip || req.connection.remoteAddress;
-//   const geo = geoip.lookup(ip);
-//   const visit = {
-//     count: pageVisits.length + 1,
-//     url: req.originalUrl,
-//     time: new Date().toISOString(),
-//     ip: ip,
-//     location: geo ? `${geo.city}, ${geo.country}` : 'Unknown'
-//   };
-//   pageVisits.push(visit);
-
-//   const request = {
-//     method: req.method,
-//     url: req.originalUrl,
-//     time: new Date().toISOString(),
-//     ip: ip
-//   };
-//   recentRequests.unshift(request);
-//   if (recentRequests.length > 20) recentRequests.pop();
-
-//   next();
-// });
-
-// Request logging middleware with analytics
+// Combined middleware for logging, analytics, and page visit tracking
 server.use((req, res, next) => {
+  // Console logging
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
   
-  // Track visitor IP
+  // Get IP address
   const ip = req.ip || req.connection.remoteAddress || req.socket.remoteAddress;
+  const timestamp = new Date().toISOString();
+  
+  // Track visitor IP in analytics
   if (ip) {
     analytics.visitors.add(ip);
   }
+  
+  // Track page visit with optional geo lookup (if geoip is available)
+  let location = 'Unknown';
+  try {
+    // Attempt to use geoip if available
+    if (typeof geoip !== 'undefined' && geoip && geoip.lookup) {
+      const geo = geoip.lookup(ip);
+      location = geo ? `${geo.city}, ${geo.country}` : 'Unknown';
+    }
+  } catch (err) {
+    // geoip not available, continue without it
+  }
+  
+  const visit = {
+    count: pageVisits.length + 1,
+    url: req.originalUrl,
+    time: timestamp,
+    ip: ip,
+    location: location
+  };
+  pageVisits.push(visit);
+  
+  // Track recent requests (keep last 20)
+  const request = {
+    method: req.method,
+    url: req.originalUrl,
+    time: timestamp,
+    ip: ip
+  };
+  recentRequests.unshift(request);
+  if (recentRequests.length > 20) recentRequests.pop();
   
   // Track total requests
   analytics.totalRequests++;
