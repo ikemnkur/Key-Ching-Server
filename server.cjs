@@ -116,6 +116,8 @@ const corsOptions = {
   optionsSuccessStatus: 200
 };
 
+const PROXY = process.env.PROXY || '';
+
 server.use(cors(corsOptions));
 // server.use(express.json());
 
@@ -192,14 +194,14 @@ server.use((req, res, next) => {
 server.use(express.static('public'));
 
 // Root route
-server.get('/', (req, res) => {
+server.get(PROXY + '/', (req, res) => {
   res.sendFile(__dirname + '/public/index.html');
 });
 
 
 
 // Server landing page route
-server.get('/server', async (req, res) => {
+server.get(PROXY + '/server', async (req, res) => {
   try {
     const uptime = process.uptime();
     const uptimeFormatted = {
@@ -501,7 +503,7 @@ server.get('/server', async (req, res) => {
 });
 
 // Logs viewer route
-server.get('/logs', (req, res) => {
+server.get(PROXY + '/logs', (req, res) => {
   const type = req.query.type || 'all'; // Filter by type: all, info, error, warn
   const limit = parseInt(req.query.limit) || 100;
   
@@ -775,14 +777,14 @@ server.get('/logs', (req, res) => {
 
     function clearLogs() {
       if (confirm('Are you sure you want to clear all logs?')) {
-        fetch('/api/logs/clear', { method: 'POST' })
+        fetch(PROXY + '/api/logs/clear', { method: 'POST' })
           .then(() => location.reload())
           .catch(err => alert('Error clearing logs: ' + err));
       }
     }
 
     function exportLogs() {
-      fetch('/api/logs/export')
+      fetch(PROXY + '/api/logs/export')
         .then(res => res.json())
         .then(data => {
           const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -820,13 +822,13 @@ server.get('/logs', (req, res) => {
 });
 
 // API endpoint to clear logs
-server.post('/api/logs/clear', (req, res) => {
+server.post(PROXY + '/api/logs/clear', (req, res) => {
   logs.entries = [];
   res.json({ success: true, message: 'Logs cleared' });
 });
 
 // API endpoint to export logs
-server.get('/api/logs/export', (req, res) => {
+server.get(PROXY + '/api/logs/export', (req, res) => {
   res.json({
     exportDate: new Date().toISOString(),
     totalLogs: logs.entries.length,
@@ -835,7 +837,7 @@ server.get('/api/logs/export', (req, res) => {
 });
 
 // API endpoint to get logs as JSON
-server.get('/api/logs', (req, res) => {
+server.get(PROXY + '/api/logs', (req, res) => {
   const type = req.query.type || 'all';
   const limit = parseInt(req.query.limit) || 100;
   
@@ -852,7 +854,7 @@ server.get('/api/logs', (req, res) => {
 
 
 // Health check endpoint
-server.get('/health', (req, res) => {
+server.get(PROXY + '/health', (req, res) => {
   const uptimeSeconds = process.uptime();
   const uptimeFormatted = {
     days: Math.floor(uptimeSeconds / 86400),
@@ -1027,7 +1029,7 @@ server.get('/health', (req, res) => {
 });
 
 // Analytics API endpoint
-server.get('/api/analytics', (req, res) => {
+server.get(PROXY + '/api/analytics', (req, res) => {
   res.json({
     visitors: analytics.visitors.size,
     users: analytics.users.size,
@@ -1047,7 +1049,7 @@ server.get('/api/analytics', (req, res) => {
 });
 
 // Custom authentication route
-server.post('/api/auth/login', async (req, res) => {
+server.post(PROXY + '/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -1127,7 +1129,7 @@ server.post('/api/auth/login', async (req, res) => {
 });
 
 // Custom fetch account details route
-server.post('/api/user', async (req, res) => {
+server.post(PROXY + '/api/user', async (req, res) => {
   console.log("Fetching user details...");
   try {
     const { email, username, password } = req.body;
@@ -1240,7 +1242,7 @@ server.post('/api/user', async (req, res) => {
 });
 
 // Custom registration route
-server.post('/api/auth/register', async (req, res) => {
+server.post(PROXY + '/api/auth/register', async (req, res) => {
   try {
     const { username, email, password, firstName, lastName, accountType, birthDate } = req.body;
 
@@ -1427,7 +1429,7 @@ module.exports = {
 
 
 // Custom logout route
-server.post('/api/auth/logout', async (req, res) => {
+server.post(PROXY + '/api/auth/logout', async (req, res) => {
   try {
     const { username } = req.body;
 
@@ -1453,7 +1455,7 @@ server.post('/api/auth/logout', async (req, res) => {
 });
 
 // Custom wallet balance route
-server.get('/api/wallet/balance/:username', async (req, res) => {
+server.get(PROXY + '/api/wallet/balance/:username', async (req, res) => {
   try {
     // const username = req.query.username || 'user_123'; // Default for demo
     const username = req.params.username;
@@ -1488,7 +1490,7 @@ server.get('/api/wallet/balance/:username', async (req, res) => {
   }
 });
 //  const response = await fetch(`${API_URL}/api/earnings/${username}?password=${localStorage.getItem("passwordtxt")}`);
-server.get('/api/earnings/:username', async (req, res) => {
+server.get(PROXY + '/api/earnings/:username', async (req, res) => {
   try {
     const username = req.params.username;
     const password = req.query.password;
@@ -1522,7 +1524,7 @@ server.get('/api/earnings/:username', async (req, res) => {
 });
 
 // Custom unlock key route
-server.post('/api/unlock/:keyId', async (req, res) => {
+server.post(PROXY + '/api/unlock/:keyId', async (req, res) => {
   try {
     const keyId = req.params.keyId;
 
@@ -1622,7 +1624,7 @@ server.post('/api/unlock/:keyId', async (req, res) => {
 
 
 // Custom unlock key route
-server.post('/api/unlock-preview/:keyId', async (req, res) => {
+server.post(PROXY + '/api/unlock-preview/:keyId', async (req, res) => {
   try {
     const keyId = req.params.keyId;
 
@@ -1660,7 +1662,7 @@ server.post('/api/unlock-preview/:keyId', async (req, res) => {
 });
 
 // Custom route for seller listings
-server.get('/api/seller/listings/:id', async (req, res) => {
+server.get(PROXY + '/api/seller/listings/:id', async (req, res) => {
   try {
     const id = req.params.id;
 
@@ -1684,7 +1686,7 @@ server.get('/api/seller/listings/:id', async (req, res) => {
 
 
 // Custom route for user-specific listings
-server.get('/api/listings/:username', async (req, res) => {
+server.get(PROXY + '/api/listings/:username', async (req, res) => {
   try {
     const username = req.params.username;
     const [listings] = await pool.execute(
@@ -1699,7 +1701,7 @@ server.get('/api/listings/:username', async (req, res) => {
 });
 
 // Custom route for editing a key listing
-server.put('/api/listings/:id', async (req, res) => {
+server.put(PROXY + '/api/listings/:id', async (req, res) => {
   try {
     const listingId = req.params.id;
     const {
@@ -1808,7 +1810,7 @@ server.put('/api/listings/:id', async (req, res) => {
 });
 
 // Custom route for deleting a key listing
-server.delete('/api/listings/:id', async (req, res) => {
+server.delete(PROXY + '/api/listings/:id', async (req, res) => {
   try {
     const listingId = req.params.id;
     const { username } = req.body; // For security, verify ownership
@@ -1886,10 +1888,10 @@ server.delete('/api/listings/:id', async (req, res) => {
 //     } else if (file) {
 //       fd.append('file', file);
 //     }
-// const { data } = await api.post('/api/create-key', fd);
+// const { data } = await api.post(PROXY + '/api/create-key', fd);
 
 
-server.get('/api/createdKey/:id', async (req, res) => {
+server.get(PROXY + '/api/createdKey/:id', async (req, res) => {
   try {
     const id = req.params.id;
     const [keys] = await pool.execute(
@@ -1925,7 +1927,7 @@ server.get('/api/createdKey/:id', async (req, res) => {
 });
 
 // Custom route for create key
-server.post('/api/create-key', async (req, res) => {
+server.post(PROXY + '/api/create-key', async (req, res) => {
   try {
     const {
       title,
@@ -2057,7 +2059,7 @@ server.post('/api/create-key', async (req, res) => {
 });
 
 // Custom route for user notifications
-server.get('/api/notifications/:username', async (req, res) => {
+server.get(PROXY + '/api/notifications/:username', async (req, res) => {
   try {
     const username = req.params.username;
 
@@ -2158,7 +2160,7 @@ async function CreateNotification(type, title, message, category, username, prio
 // // Create user in server
 
 
-server.post('/api/userData', async (req, res) => {
+server.post(PROXY + '/api/userData', async (req, res) => {
   try {
     const newUser = req.body;
 
@@ -2225,7 +2227,7 @@ server.post('/api/userData', async (req, res) => {
 });
 
 // Custom route for user purchases
-server.get('/api/purchases/:username', async (req, res) => {
+server.get(PROXY + '/api/purchases/:username', async (req, res) => {
   try {
     const username = req.params.username;
 
@@ -2242,7 +2244,7 @@ server.get('/api/purchases/:username', async (req, res) => {
 });
 
 // Custom route for user redemptions
-server.get('/api/redemptions/:username', async (req, res) => {
+server.get(PROXY + '/api/redemptions/:username', async (req, res) => {
   try {
     const username = req.params.username;
 
@@ -2368,7 +2370,7 @@ async function checkTransaction(crypto, txHash, walletAddress, amount) {
   }
 }
 
-server.post('/api/purchases/:username', async (req, res) => {
+server.post(PROXY + '/api/purchases/:username', async (req, res) => {
   try {
     const {
       username,
@@ -2723,13 +2725,13 @@ async function fetchSol(address, limit = 100) {
 
 
 // // -------- Unified endpoint --------
-// server.get('/txs', async (req, res) => {
+// server.get(PROXY + '/txs', async (req, res) => {
 //   FetchRecentTransactionsCron()
 // });
 
 
 
-server.post('/api/lookup-transaction', async (req, res) => {
+server.post(PROXY + '/api/lookup-transaction', async (req, res) => {
 
   FetchRecentTransactionsCron();
 
@@ -2822,7 +2824,7 @@ server.post('/api/lookup-transaction', async (req, res) => {
 // example API startpoint usage in React:
 // export const uploadTransactionScreenshot = async (formData) => {
 //   try {
-//     const res = await api.post('/upload/transaction-screenshot', formData, {
+//     const res = await api.post(PROXY + '/upload/transaction-screenshot', formData, {
 //       // Let Axios/browser set the multipart boundary automatically:
 //       // headers: { 'Content-Type': undefined },  // <- clears any JSON default
 //       //  headers: { 'Content-Type': 'multipart/form-data' },
@@ -2881,7 +2883,7 @@ const MIME_TO_EXT = {
 
 
 // Endpoint to handle transaction screenshot upload
-server.post('/api/upload/transaction-screenshot/:username/:txHash', async (req, res) => {
+server.post(PROXY + '/api/upload/transaction-screenshot/:username/:txHash', async (req, res) => {
   console.log("Transaction screenshot upload request received");
 
   const { username, txHash } = req.params;
@@ -2923,7 +2925,7 @@ server.post('/api/upload/transaction-screenshot/:username/:txHash', async (req, 
     // Validate by ext and mime
     const extFromName = path.extname(originalName).toLowerCase().replace('.', '');
     const extOk = !!extFromName && ALLOWED.test(extFromName);
-    const mimeOk = ALLOWED.test((mimeType || '').split('/').pop() || '');
+    const mimeOk = ALLOWED.test((mimeType || '').split(PROXY + '/').pop() || '');
 
     if (!extOk && !mimeOk) {
       file.resume();
@@ -3083,7 +3085,7 @@ server.post('/api/upload/transaction-screenshot/:username/:txHash', async (req, 
  * Accepts a multipart/form-data upload for a user's profile picture.
  * Stores the image in Google Cloud Storage and updates the user's profilePicture field.
  */
-server.post('/api/profile-picture/:username', async (req, res) => {
+server.post(PROXY + '/api/profile-picture/:username', async (req, res) => {
   const { username } = req.params;
   let busboy;
   try {
@@ -3109,7 +3111,7 @@ server.post('/api/profile-picture/:username', async (req, res) => {
     // Validate by ext and mime
     const extFromName = path.extname(originalName).toLowerCase().replace('.', '');
     const extOk = !!extFromName && ALLOWED.test(extFromName);
-    const mimeOk = ALLOWED.test((mimeType || '').split('/').pop() || '');
+    const mimeOk = ALLOWED.test((mimeType || '').split(PROXY + '/').pop() || '');
 
     if (!extOk && !mimeOk) {
       file.resume();
@@ -3231,7 +3233,7 @@ server.post('/api/profile-picture/:username', async (req, res) => {
 });
 
 // Custom route for user redemptions
-server.post('/api/redemptions/:username', async (req, res) => {
+server.post(PROXY + '/api/redemptions/:username', async (req, res) => {
   try {
     const username = req.params.username;
     [walletAddress, currency, credits] = req.body;
@@ -3302,7 +3304,7 @@ server.post('/api/redemptions/:username', async (req, res) => {
 
 
 // Basic RESTful routes for all tables
-server.get('/api/:table', async (req, res) => {
+server.get(PROXY + '/api/:table', async (req, res) => {
   try {
     const table = req.params.table;
     const allowedTables = ['userData', 'buyCredits', 'redeemCredits', 'earnings', 'unlocks', 'createdKeys', 'notifications', 'wallet', 'reports', 'supportTickets'];
@@ -3319,7 +3321,7 @@ server.get('/api/:table', async (req, res) => {
   }
 });
 
-server.get('/api/:table/:id', async (req, res) => {
+server.get(PROXY + '/api/:table/:id', async (req, res) => {
   try {
     const { table, id } = req.params;
     const allowedTables = ['userData', 'buyCredits', 'redeemCredits', 'earnings', 'unlocks', 'notifications', 'wallet', 'reports', 'supportTickets'];
@@ -3341,7 +3343,7 @@ server.get('/api/:table/:id', async (req, res) => {
   }
 });
 
-server.patch('/api/:table/:id', async (req, res) => {
+server.patch(PROXY + '/api/:table/:id', async (req, res) => {
   try {
     const { table, id } = req.params;
     const allowedTables = ['userData', 'buyCredits', 'redeemCredits', 'earnings', 'unlocks', 'createdKeys', 'notifications', 'wallet', 'reports', 'supportTickets'];
@@ -3382,12 +3384,12 @@ server.patch('/api/:table/:id', async (req, res) => {
 // ============================================
 
 // Serve database manager HTML page
-server.get('/db-manager', (req, res) => {
+server.get(PROXY + '/db-manager', (req, res) => {
   res.sendFile(__dirname + '/public/db-manager.html');
 });
 
 // Get database statistics
-server.get('/api/db-stats', async (req, res) => {
+server.get(PROXY + '/api/db-stats', async (req, res) => {
   try {
     // Get database size
     const [sizeResult] = await pool.execute(`
@@ -3454,7 +3456,7 @@ server.get('/api/db-stats', async (req, res) => {
 });
 
 // Get list of tables with details
-server.get('/api/db-tables', async (req, res) => {
+server.get(PROXY + '/api/db-tables', async (req, res) => {
   try {
     const [tables] = await pool.execute(`
       SELECT 
@@ -3486,7 +3488,7 @@ server.get('/api/db-tables', async (req, res) => {
 });
 
 // Get records from a specific table with pagination and search
-server.get('/api/db-records/:tableName', async (req, res) => {
+server.get(PROXY + '/api/db-records/:tableName', async (req, res) => {
   try {
     const { tableName } = req.params;
     const limit = parseInt(req.query.limit) || 50;
@@ -3547,7 +3549,7 @@ server.get('/api/db-records/:tableName', async (req, res) => {
 });
 
 // Execute raw SQL query (SELECT only for safety)
-server.post('/api/db-query', async (req, res) => {
+server.post(PROXY + '/api/db-query', async (req, res) => {
   try {
     const { query } = req.body;
 

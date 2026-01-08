@@ -38,3 +38,5 @@ service-account.json
 # ignore build files / app.yaml deploy files
 setup-secrets.sh
 
+.env
+.env-backup
