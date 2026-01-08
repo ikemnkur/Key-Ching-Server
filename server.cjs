@@ -87,14 +87,6 @@ console.warn = function(...args) {
   originalConsoleWarn.apply(console, args);
 };
 
-// Middleware
-// server.use(cors({
-//   origin: process.env.FRONTEND_URL || '*',
-//   credentials: true
-// }));
-
-// USE this CORS CONFIG Later
-
 // CORS configuration
 const corsOptions = {
   origin: function (origin, callback) {
@@ -3582,6 +3574,9 @@ server.post('/api/db-query', async (req, res) => {
   }
 });
 
+// ###############################################
+      // Error handles and server start up
+// ###############################################      
 
 // Global error handler
 server.use((error, req, res, next) => {
