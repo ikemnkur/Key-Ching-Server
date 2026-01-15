@@ -210,8 +210,117 @@ server.get(PROXY + '/', (req, res) => {
 
 
 
+// ###########################################################
+//                    server routes
+// ###########################################################
+
+server.use(express.json({ limit: '250mb' }));
+server.use(express.urlencoded({ extended: true, limit: '250mb' }));
+
+// Admin Dashboard Page
+
+// let pageVisits = [];
+// let recentRequests = [];
+// const startTime = Date.now();
+
+// // Middleware to track page visits and requests
+// server.use((req, res, next) => {
+//   const ip = req.ip || req.connection.remoteAddress;
+//   const geo = geoip.lookup(ip);
+//   const visit = {
+//     count: pageVisits.length + 1,
+//     url: req.originalUrl,
+//     time: new Date().toISOString(),
+//     ip: ip,
+//     location: geo ? `${geo.city}, ${geo.country}` : 'Unknown'
+//   };
+//   pageVisits.push(visit);
+
+//   const request = {
+//     method: req.method,
+//     url: req.originalUrl,
+//     time: new Date().toISOString(),
+//     ip: ip
+//   };
+//   recentRequests.unshift(request);
+//   if (recentRequests.length > 20) recentRequests.pop();
+
+//   next();
+// });
+
+// // Request logging middleware
+// server.use((req, res, next) => {
+//   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+//   next();
+// });
+
+// // Root route
+// server.get('/', (req, res) => {
+//   res.sendFile(path.join(__dirname, 'public', 'index.html'));
+// });
+
+// Serve static files from public directory
+server.use(express.static('public'));
+
+// Request logging middleware with analytics
+server.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+
+  // Track visitor IP
+  const ip = req.ip || req.connection.remoteAddress || req.socket.remoteAddress;
+  if (ip) {
+    analytics.visitors.add(ip);
+  }
+
+  // Track total requests
+  analytics.totalRequests++;
+
+  // Track data received (request size)
+  const contentLength = parseInt(req.headers['content-length']) || 0;
+  analytics.dataRx += contentLength;
+
+  // Track endpoint calls
+  const endpoint = `${req.method} ${req.path}`;
+  analytics.endpointCalls[endpoint] = (analytics.endpointCalls[endpoint] || 0) + 1;
+
+  // Track data transmitted (response size)
+  const originalSend = res.send;
+  res.send = function (data) {
+    if (data) {
+      const size = Buffer.byteLength(typeof data === 'string' ? data : JSON.stringify(data));
+      analytics.dataTx += size;
+    }
+    originalSend.call(this, data);
+  };
+
+  next();
+});
+
+// Root route
+server.get('/', (req, res) => {
+  res.sendFile(__dirname + '/public/index.html');
+});
+
+// Endpoint to fetch and display the raw logs
+server.get('/log-file', (req, res) => {
+  fs.readFile(LOG_FILE, 'utf8', (err, data) => {
+    if (err) {
+      console.error('Error reading log file for endpoint:', err);
+      return res.status(500).send('Error reading logs.');
+    }
+    res.setHeader('Content-Type', 'text/plain');
+    res.send(data);
+  });
+});
+
+// A sample endpoint to generate more log activity
+server.get('/generate-activity', (req, res) => {
+  console.log(`User accessed /generate-activity endpoint (IP: ${req.ip})`);
+  res.send('Activity logged using console.log()! Check your main page.');
+});
+
 // Server landing page route
-server.get(PROXY + '/server', async (req, res) => {
+server.get('/server', async (req, res) => {
   try {
     const uptime = process.uptime();
     const uptimeFormatted = {
@@ -513,17 +622,17 @@ server.get(PROXY + '/server', async (req, res) => {
 });
 
 // Logs viewer route
-server.get(PROXY + '/logs', (req, res) => {
+server.get('/logs', (req, res) => {
   const type = req.query.type || 'all'; // Filter by type: all, info, error, warn
   const limit = parseInt(req.query.limit) || 100;
-  
+
   let filteredLogs = logs.entries;
   if (type !== 'all') {
     filteredLogs = logs.entries.filter(log => log.type === type);
   }
-  
+
   const displayLogs = filteredLogs.slice(-limit).reverse();
-  
+
   const html = `
 <!DOCTYPE html>
 <html lang="en">
@@ -787,14 +896,14 @@ server.get(PROXY + '/logs', (req, res) => {
 
     function clearLogs() {
       if (confirm('Are you sure you want to clear all logs?')) {
-        fetch(PROXY + '/api/logs/clear', { method: 'POST' })
+        fetch('/api/logs/clear', { method: 'POST' })
           .then(() => location.reload())
           .catch(err => alert('Error clearing logs: ' + err));
       }
     }
 
     function exportLogs() {
-      fetch(PROXY + '/api/logs/export')
+      fetch('/api/logs/export')
         .then(res => res.json())
         .then(data => {
           const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -816,7 +925,7 @@ server.get(PROXY + '/logs', (req, res) => {
 </body>
 </html>
   `;
-  
+
   function escapeHtml(text) {
     const map = {
       '&': '&amp;',
@@ -827,18 +936,18 @@ server.get(PROXY + '/logs', (req, res) => {
     };
     return text.replace(/[&<>"']/g, m => map[m]);
   }
-  
+
   res.send(html);
 });
 
 // API endpoint to clear logs
-server.post(PROXY + '/api/logs/clear', (req, res) => {
+server.post('/api/logs/clear', (req, res) => {
   logs.entries = [];
   res.json({ success: true, message: 'Logs cleared' });
 });
 
 // API endpoint to export logs
-server.get(PROXY + '/api/logs/export', (req, res) => {
+server.get('/api/logs/export', (req, res) => {
   res.json({
     exportDate: new Date().toISOString(),
     totalLogs: logs.entries.length,
@@ -847,24 +956,23 @@ server.get(PROXY + '/api/logs/export', (req, res) => {
 });
 
 // API endpoint to get logs as JSON
-server.get(PROXY + '/api/logs', (req, res) => {
+server.get('/api/logs', (req, res) => {
   const type = req.query.type || 'all';
   const limit = parseInt(req.query.limit) || 100;
-  
+
   let filteredLogs = logs.entries;
   if (type !== 'all') {
     filteredLogs = logs.entries.filter(log => log.type === type);
   }
-  
+
   res.json({
     total: filteredLogs.length,
     logs: filteredLogs.slice(-limit).reverse()
   });
 });
 
-
 // Health check endpoint
-server.get(PROXY + '/health', (req, res) => {
+server.get('/health', (req, res) => {
   const uptimeSeconds = process.uptime();
   const uptimeFormatted = {
     days: Math.floor(uptimeSeconds / 86400),
@@ -1037,6 +1145,205 @@ server.get(PROXY + '/health', (req, res) => {
 
   res.send(html);
 });
+
+
+// ============================================
+// DATABASE MANAGEMENT ENDPOINTS
+// ============================================
+
+// Serve database manager HTML page
+server.get('/db-manager', (req, res) => {
+  res.sendFile(__dirname + '/public/db-manager.html');
+});
+
+// Get database statistics
+server.get('/api/db-stats', async (req, res) => {
+  try {
+    // Get database size
+    const [sizeResult] = await pool.execute(`
+      SELECT 
+        ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS size_mb
+      FROM information_schema.TABLES 
+      WHERE table_schema = ?
+    `, [dbConfig.database]);
+
+    // Get total tables
+    const [tablesResult] = await pool.execute(`
+      SELECT COUNT(*) as count 
+      FROM information_schema.TABLES 
+      WHERE table_schema = ?
+    `, [dbConfig.database]);
+
+    // Get active connections
+    const [connectionsResult] = await pool.execute(`
+      SELECT COUNT(*) as count 
+      FROM information_schema.PROCESSLIST 
+      WHERE DB = ?
+    `, [dbConfig.database]);
+
+    // Get total records across all tables
+    const [allTables] = await pool.execute(`
+      SELECT table_name 
+      FROM information_schema.TABLES 
+      WHERE table_schema = ?
+    `, [dbConfig.database]);
+
+    let totalRecords = 0;
+    for (const table of allTables) {
+      const [countResult] = await pool.execute(`SELECT COUNT(*) as count FROM ${table.table_name}`);
+      totalRecords += countResult[0].count;
+    }
+
+    // Get table details
+    const [tableDetails] = await pool.execute(`
+      SELECT 
+        table_name,
+        table_rows,
+        ROUND((data_length + index_length) / 1024 / 1024, 2) AS size_mb,
+        engine,
+        table_collation
+      FROM information_schema.TABLES 
+      WHERE table_schema = ?
+      ORDER BY table_name
+    `, [dbConfig.database]);
+
+    res.json({
+      databaseSize: sizeResult[0].size_mb,
+      totalTables: tablesResult[0].count,
+      activeConnections: connectionsResult[0].count,
+      totalRecords: totalRecords,
+      tables: tableDetails,
+      databaseName: dbConfig.database,
+      host: dbConfig.host,
+      port: dbConfig.port
+    });
+  } catch (error) {
+    console.error('Database stats error:', error);
+    res.status(500).json({ error: 'Failed to retrieve database statistics', message: error.message });
+  }
+});
+
+// Get list of tables with details
+server.get('/api/db-tables', async (req, res) => {
+  try {
+    const [tables] = await pool.execute(`
+      SELECT 
+        table_name as name,
+        table_rows as rows,
+        ROUND((data_length + index_length) / 1024 / 1024, 2) AS size,
+        engine,
+        create_time,
+        update_time
+      FROM information_schema.TABLES 
+      WHERE table_schema = ?
+      ORDER BY table_name
+    `, [dbConfig.database]);
+
+    const formattedTables = tables.map(table => ({
+      name: table.name,
+      rows: table.rows,
+      size: `${table.size} MB`,
+      engine: table.engine,
+      created: table.create_time,
+      updated: table.update_time
+    }));
+
+    res.json({ tables: formattedTables });
+  } catch (error) {
+    console.error('Get tables error:', error);
+    res.status(500).json({ error: 'Failed to retrieve tables', message: error.message });
+  }
+});
+
+// Get records from a specific table with pagination and search
+server.get('/api/db-records/:tableName', async (req, res) => {
+  try {
+    const { tableName } = req.params;
+    const limit = parseInt(req.query.limit) || 50;
+    const offset = parseInt(req.query.offset) || 0;
+    const search = req.query.search || '';
+
+    // Validate table name exists
+    const [tableCheck] = await pool.execute(`
+      SELECT table_name 
+      FROM information_schema.TABLES 
+      WHERE table_schema = ? AND table_name = ?
+    `, [dbConfig.database, tableName]);
+
+    if (tableCheck.length === 0) {
+      return res.status(404).json({ error: 'Table not found' });
+    }
+
+    // Get total count
+    let countQuery = `SELECT COUNT(*) as total FROM ${tableName}`;
+    let dataQuery = `SELECT * FROM ${tableName}`;
+    const params = [];
+
+    // Add search filter if provided
+    if (search) {
+      // Get column names
+      const [columns] = await pool.execute(`
+        SELECT COLUMN_NAME 
+        FROM information_schema.COLUMNS 
+        WHERE table_schema = ? AND table_name = ?
+      `, [dbConfig.database, tableName]);
+
+      const searchConditions = columns.map(col => `${col.COLUMN_NAME} LIKE ?`).join(' OR ');
+      const searchParams = columns.map(() => `%${search}%`);
+
+      countQuery += ` WHERE ${searchConditions}`;
+      dataQuery += ` WHERE ${searchConditions}`;
+      params.push(...searchParams);
+    }
+
+    // Get total count
+    const [countResult] = await pool.execute(countQuery, params);
+    const total = countResult[0].total;
+
+    // Get records with pagination
+    dataQuery += ` LIMIT ? OFFSET ?`;
+    const [records] = await pool.execute(dataQuery, [...params, limit, offset]);
+
+    res.json({
+      records,
+      total,
+      limit,
+      offset
+    });
+  } catch (error) {
+    console.error('Get records error:', error);
+    res.status(500).json({ error: 'Failed to retrieve records', message: error.message });
+  }
+});
+
+// Execute raw SQL query (SELECT only for safety)
+server.post('/api/db-query', async (req, res) => {
+  try {
+    const { query } = req.body;
+
+    if (!query) {
+      return res.status(400).json({ error: 'Query is required' });
+    }
+
+    // Only allow SELECT queries for safety
+    const trimmedQuery = query.trim().toUpperCase();
+    if (!trimmedQuery.startsWith('SELECT') && !trimmedQuery.startsWith('SHOW') && !trimmedQuery.startsWith('DESCRIBE')) {
+      return res.status(403).json({ error: 'Only SELECT, SHOW, and DESCRIBE queries are allowed' });
+    }
+
+    const [results] = await pool.execute(query);
+
+    res.json({
+      success: true,
+      results,
+      rowCount: results.length
+    });
+  } catch (error) {
+    console.error('Query execution error:', error);
+    res.status(500).json({ error: 'Query execution failed', message: error.message });
+  }
+});
+
 
 // Analytics API endpoint
 server.get(PROXY + '/api/analytics', (req, res) => {
