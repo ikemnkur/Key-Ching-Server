@@ -5,6 +5,7 @@ const cors = require('cors');
 const bcrypt = require('bcrypt');
 const { v4: uuidv4 } = require('uuid');
 const axios = require('axios');
+import { OAuth2Client } from "google-auth-library";
 
 const server = express();
 
@@ -22,6 +23,85 @@ const dbConfig = {
 
 // Create connection pool
 const pool = mysql.createPool(dbConfig);
+
+// Outh Configuration
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI;
+
+// IEdPT0dMRV9DTElFTlRfSUQ9Mjk0MTcyNzA2OTk3LTRsMnJwajNsamYxZHIzczVuMTN2czcxOXEzMnVvb21xLmFwcHMuZ29vZ2xldXNlcmNvbnRlbnQuY29tCiAgIEdPT0dMRV9DTElFTlRfU0VDUkVUPUdPQ1NQWC14NE50dlpnTDM2b2x4anRZN0pIOGlqQVE5QXRZCiAgIEdPT0dMRV9SRURJUkVDVF9VUkk9aHR0cDovL2xvY2FsaG9zdDozMDAw
+
+if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REDIRECT_URI) {
+  // throw new Error("Missing required environment variables for Google OAuth.");
+  console.warn("Warning: Missing required environment variables for Google OAuth.");
+}
+
+const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
+
+// Middleware to check if the user is authenticated
+async function isAuthenticated(req, res, next) {
+  const token = req.headers.authorization?.split(" ")[1]; // Extract token from "Bearer <token>"
+
+  if (!token) {
+    return res.status(401).json({ message: "Unauthorized: No token provided" });
+  }
+
+  try {
+    // This is to verify the google id_token.
+    const ticket = await googleClient.verifyIdToken({
+      idToken: token,
+      audience: GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+    req.user = payload;
+    next();
+  } catch (error) {
+    console.error("Token verification failed:", error);
+    res.status(401).json({ message: "Unauthorized: Invalid token" });
+  }
+}
+
+// Route to handle Google OAuth login
+server.post("/auth/google/login", async (req, res) => {
+  const { code } = req.body;
+
+  if (!code) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+
+  try {
+    const response = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        code,
+        client_id: GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        redirect_uri: GOOGLE_REDIRECT_URI,
+        grant_type: "authorization_code",
+      }),
+    }).then((res) => res.json());
+
+    // The `response` object contains id_token which is a jwt token with the payload of the user information. If you have existing application authorization logic
+    // you can use it here by checking if the email address in the jwt payload exists in your database and return the authorization token to the user.
+    // In this article we are using the id_token provided by google as the authorization token.
+    res.json({ token: response.id_token });
+  } catch (error) {
+    console.error("Error during token exchange:", error);
+    res.status(500).json({ message: "Failed to authenticate with Google" });
+  }
+});
+
+// Protected route example
+server.get("/protected", isAuthenticated, (req, res) => {
+  res.json({ message: "You are authenticated!", user: req.user });
+});
+
+
+// Server configuration
 
 // Analytics tracking
 const analytics = {
@@ -1368,19 +1448,63 @@ server.get(PROXY + '/api/analytics', (req, res) => {
 // Custom authentication route
 server.post(PROXY + '/api/auth/login', async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, googleCode } = req.body;
 
-    // Validate input
-    if (!email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email and password are required'
-      });
+    let userEmail = email;
+
+    // Google OAuth authentication flow
+    if (googleCode) {
+      try {
+        // Exchange authorization code for tokens
+        const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            code: googleCode,
+            client_id: GOOGLE_CLIENT_ID,
+            client_secret: GOOGLE_CLIENT_SECRET,
+            redirect_uri: GOOGLE_REDIRECT_URI,
+            grant_type: "authorization_code",
+          }),
+        }).then((res) => res.json());
+
+        if (!tokenResponse.id_token) {
+          return res.status(401).json({
+            success: false,
+            message: 'Failed to authenticate with Google'
+          });
+        }
+
+        // Verify the id_token and extract user info
+        const ticket = await googleClient.verifyIdToken({
+          idToken: tokenResponse.id_token,
+          audience: GOOGLE_CLIENT_ID,
+        });
+
+        const payload = ticket.getPayload();
+        userEmail = payload.email;
+      } catch (googleError) {
+        console.error('Google OAuth error:', googleError);
+        return res.status(401).json({
+          success: false,
+          message: 'Failed to authenticate with Google'
+        });
+      }
+    } else {
+      // Traditional email/password validation
+      if (!email || !password) {
+        return res.status(400).json({
+          success: false,
+          message: 'Email and password are required'
+        });
+      }
     }
 
     const [users] = await pool.execute(
       'SELECT * FROM userData WHERE email = ?',
-      [email]
+      [userEmail]
     );
 
     const user = users[0];
@@ -1388,7 +1512,7 @@ server.post(PROXY + '/api/auth/login', async (req, res) => {
     if (!user) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid credentials'
+        message: googleCode ? 'No account found for this Google email. Please register first.' : 'Invalid credentials'
       });
     }
 
@@ -1401,8 +1525,14 @@ server.post(PROXY + '/api/auth/login', async (req, res) => {
       });
     }
 
-    // Compare password with hash
-    const isValidPassword = await bcrypt.compare(password, user.passwordHash);
+    // For Google OAuth, skip password check since authentication is done via Google
+    let isValidPassword = false;
+    if (googleCode) {
+      isValidPassword = true;
+    } else {
+      // Compare password with hash for traditional login
+      isValidPassword = await bcrypt.compare(password, user.passwordHash);
+    }
 
     if (isValidPassword) {
       const userData = { ...user };
@@ -1413,7 +1543,7 @@ server.post(PROXY + '/api/auth/login', async (req, res) => {
 
       await pool.execute(
         'UPDATE userData SET loginStatus = true, lastLogin = ? WHERE email = ?',
-        [currentDateTime, email]
+        [currentDateTime, userEmail]
       );
 
       // Generate a proper JWT-like token (in production, use actual JWT)
