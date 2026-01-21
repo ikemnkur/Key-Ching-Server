@@ -3995,6 +3995,319 @@ server.post(PROXY + '/api/db-query', async (req, res) => {
   }
 });
 
+
+
+
+
+// ========================================
+// Device Fingerprint Endpoints
+// ========================================
+
+// Save or update device fingerprint
+server.post(PROXY + '/api/fingerprint/save', async (req, res) => {
+  try {
+    const {
+      userId,
+      fingerprintHash,
+      shortHash,
+      deviceType,
+      browser,
+      os,
+      screenResolution,
+      timezone,
+      language,
+      ipAddress,
+      fullFingerprint,
+      compactFingerprint,
+      userAgent
+    } = req.body;
+
+    // Validate required fields
+    if (!userId || !fingerprintHash) {
+      return res.status(400).json({
+        success: false,
+        message: 'userId and fingerprintHash are required'
+      });
+    }
+
+    // Insert or update fingerprint using INSERT ... ON DUPLICATE KEY UPDATE
+    await pool.execute(
+      `INSERT INTO device_fingerprints 
+        (user_id, fingerprint_hash, short_hash, device_type, browser, os, 
+         screen_resolution, timezone, language, ip_address, full_fingerprint, 
+         compact_fingerprint, user_agent, first_seen, last_seen, login_count)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1)
+       ON DUPLICATE KEY UPDATE
+         last_seen = CURRENT_TIMESTAMP,
+         login_count = login_count + 1,
+         ip_address = VALUES(ip_address),
+         full_fingerprint = VALUES(full_fingerprint),
+         compact_fingerprint = VALUES(compact_fingerprint),
+         user_agent = VALUES(user_agent),
+         updated_at = CURRENT_TIMESTAMP`,
+      [
+        userId,
+        fingerprintHash,
+        shortHash || fingerprintHash.substring(0, 16),
+        deviceType || 'Unknown',
+        browser || 'Unknown',
+        os || 'Unknown',
+        screenResolution || 'Unknown',
+        timezone || 'UTC',
+        language || 'en-US',
+        ipAddress || req.ip || req.connection.remoteAddress,
+        JSON.stringify(fullFingerprint),
+        JSON.stringify(compactFingerprint),
+        userAgent || req.headers['user-agent']
+      ]
+    );
+
+    // Fetch the saved/updated record
+    const [savedRows] = await pool.execute(
+      'SELECT * FROM device_fingerprints WHERE user_id = ? AND fingerprint_hash = ?',
+      [userId, fingerprintHash]
+    );
+    const savedFingerprint = savedRows[0];
+
+    console.log(`✅ Fingerprint saved for user ${userId}: ${shortHash || fingerprintHash.substring(0, 16)}`);
+
+    res.json({
+      success: true,
+      message: 'Fingerprint saved successfully',
+      fingerprint: savedFingerprint
+    });
+  } catch (error) {
+    console.error('Save fingerprint error:', error);
+
+    // Check for duplicate entry error
+    if (error.code === 'ER_DUP_ENTRY') {
+      // Try to update instead
+      try {
+        const { userId, fingerprintHash, ipAddress, fullFingerprint, compactFingerprint } = req.body;
+
+        await pool.execute(
+          `UPDATE device_fingerprints 
+           SET last_seen = CURRENT_TIMESTAMP, 
+               login_count = login_count + 1,
+               ip_address = ?,
+               full_fingerprint = ?,
+               compact_fingerprint = ?,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE user_id = ? AND fingerprint_hash = ?`,
+          [
+            ipAddress || req.ip,
+            JSON.stringify(fullFingerprint),
+            JSON.stringify(compactFingerprint),
+            userId,
+            fingerprintHash
+          ]
+        );
+
+        res.json({
+          success: true,
+          message: 'Fingerprint updated successfully'
+        });
+      } catch (updateError) {
+        console.error('Update fingerprint error:', updateError);
+        res.status(500).json({
+          success: false,
+          message: 'Failed to save or update fingerprint'
+        });
+      }
+    } else {
+      res.status(500).json({
+        success: false,
+        message: 'Database error while saving fingerprint'
+      });
+    }
+  }
+});
+
+// Get all fingerprints for a user
+server.get(PROXY + '/api/fingerprint/user/:userId', authenticateToken, async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const [fingerprints] = await pool.execute(
+      `SELECT 
+        id,
+        fingerprint_hash,
+        short_hash,
+        device_type,
+        browser,
+        os,
+        screen_resolution,
+        timezone,
+        language,
+        ip_address,
+        first_seen,
+        last_seen,
+        login_count,
+        unscramble_count,
+        leaked_content_count,
+        is_trusted,
+        is_blocked,
+        block_reason,
+        created_at,
+        CASE 
+          WHEN last_seen > DATE_SUB(NOW(), INTERVAL 1 DAY) THEN 'active'
+          WHEN last_seen > DATE_SUB(NOW(), INTERVAL 7 DAY) THEN 'recent'
+          WHEN last_seen > DATE_SUB(NOW(), INTERVAL 30 DAY) THEN 'inactive'
+          ELSE 'dormant'
+        END as device_status
+       FROM device_fingerprints 
+       WHERE user_id = ? 
+       ORDER BY last_seen DESC`,
+      [userId]
+    );
+
+    res.json({
+      success: true,
+      fingerprints
+    });
+  } catch (error) {
+    console.error('Get user fingerprints error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Database error'
+    });
+  }
+});
+
+// Get full fingerprint details by hash
+server.get(PROXY + '/api/fingerprint/details/:hash', authenticateToken, async (req, res) => {
+  try {
+    const { hash } = req.params;
+
+    const [fingerprints] = await pool.execute(
+      'SELECT * FROM device_fingerprints WHERE fingerprint_hash = ? OR short_hash = ?',
+      [hash, hash]
+    );
+
+    if (fingerprints.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Fingerprint not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      fingerprint: fingerprints[0]
+    });
+  } catch (error) {
+    console.error('Get fingerprint details error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Database error'
+    });
+  }
+});
+
+// Increment unscramble count when content is unscrambled
+server.post(PROXY + '/api/fingerprint/unscramble/:hash', authenticateToken, async (req, res) => {
+  try {
+    const { hash } = req.params;
+
+    await pool.execute(
+      'CALL increment_unscramble_count(?)',
+      [hash]
+    );
+
+    res.json({
+      success: true,
+      message: 'Unscramble count incremented'
+    });
+  } catch (error) {
+    console.error('Increment unscramble count error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Database error'
+    });
+  }
+});
+
+// Mark device as leaked (when leaked content is detected)
+server.post(PROXY + '/api/fingerprint/leaked/:hash', authenticateToken, async (req, res) => {
+  try {
+    const { hash } = req.params;
+    const { reason } = req.body;
+
+    await pool.execute(
+      'CALL mark_device_leaked(?, ?)',
+      [hash, reason || 'Leaked content detected']
+    );
+
+    res.json({
+      success: true,
+      message: 'Device marked as leaked and blocked'
+    });
+  } catch (error) {
+    console.error('Mark device leaked error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Database error'
+    });
+  }
+});
+
+// Block/unblock a device
+server.patch(PROXY + '/api/fingerprint/block/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isBlocked, blockReason } = req.body;
+
+    await pool.execute(
+      'UPDATE device_fingerprints SET is_blocked = ?, block_reason = ? WHERE id = ?',
+      [isBlocked, blockReason || null, id]
+    );
+
+    res.json({
+      success: true,
+      message: `Device ${isBlocked ? 'blocked' : 'unblocked'} successfully`
+    });
+  } catch (error) {
+    console.error('Block device error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Database error'
+    });
+  }
+});
+
+// Get device statistics for admin
+server.get(PROXY + '/api/fingerprint/stats', authenticateToken, async (req, res) => {
+  try {
+    const [stats] = await pool.execute(`
+      SELECT 
+        COUNT(*) as total_devices,
+        COUNT(DISTINCT user_id) as total_users,
+        SUM(CASE WHEN is_blocked = true THEN 1 ELSE 0 END) as blocked_devices,
+        SUM(CASE WHEN leaked_content_count > 0 THEN 1 ELSE 0 END) as devices_with_leaks,
+        SUM(login_count) as total_logins,
+        SUM(unscramble_count) as total_unscrambles,
+        AVG(login_count) as avg_logins_per_device
+      FROM device_fingerprints
+    `);
+
+    res.json({
+      success: true,
+      stats: stats[0]
+    });
+  } catch (error) {
+    console.error('Get fingerprint stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Database error'
+    });
+  }
+});
+
+// ========================================
+// End of Device Fingerprint Endpoints
+// ========================================
+
+
 // ###############################################
 // Error handles and server start up
 // ###############################################      
