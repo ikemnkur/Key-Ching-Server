@@ -38,12 +38,13 @@ jobs:
           workload_identity_provider: 'projects/294172706997/locations/global/workloadIdentityPools/my-pool/providers/my-provider'
           service_account: 'key-ching-server@appspot.gserviceaccount.com'
 
-      # 2. Deploy multiple services (Standard Environment)
+      # 2. Deploy with the env-vars-file flag
       - id: 'deploy'
         name: 'Deploy Services'
         uses: 'google-github-actions/deploy-appengine@v2'
         with:
-          # List all service config files and dispatch.yaml
           deliverables: 'app.yaml'
           project_id: 'key-ching-server'
-          promote: true # Automatically route traffic to the new versions
+          promote: true
+          # This flag merges your secrets into the app's environment
+          env_vars_file: 'env.yaml'
