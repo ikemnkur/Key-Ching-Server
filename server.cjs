@@ -5,7 +5,12 @@ const cors = require('cors');
 const bcrypt = require('bcrypt');
 const { v4: uuidv4 } = require('uuid');
 const axios = require('axios');
-import { OAuth2Client } from "google-auth-library";
+const { OAuth2Client } = require("google-auth-library");
+
+const sgMail = require('@sendgrid/mail');
+const dotenv = require('dotenv');
+
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 const server = express();
 
@@ -125,7 +130,7 @@ const originalConsoleLog = console.log;
 const originalConsoleError = console.error;
 const originalConsoleWarn = console.warn;
 
-console.log = function(...args) {
+console.log = function (...args) {
   const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
   logs.entries.push({
     type: 'info',
@@ -139,7 +144,7 @@ console.log = function(...args) {
   originalConsoleLog.apply(console, args);
 };
 
-console.error = function(...args) {
+console.error = function (...args) {
   const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
   logs.entries.push({
     type: 'error',
@@ -153,7 +158,7 @@ console.error = function(...args) {
   originalConsoleError.apply(console, args);
 };
 
-console.warn = function(...args) {
+console.warn = function (...args) {
   const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
   logs.entries.push({
     type: 'warn',
@@ -215,16 +220,16 @@ const startTime = Date.now();
 server.use((req, res, next) => {
   // Console logging
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
-  
+
   // Get IP address
   const ip = req.ip || req.connection.remoteAddress || req.socket.remoteAddress;
   const timestamp = new Date().toISOString();
-  
+
   // Track visitor IP in analytics
   if (ip) {
     analytics.visitors.add(ip);
   }
-  
+
   // Track page visit with optional geo lookup (if geoip is available)
   let location = 'Unknown';
   try {
@@ -236,7 +241,7 @@ server.use((req, res, next) => {
   } catch (err) {
     // geoip not available, continue without it
   }
-  
+
   const visit = {
     count: pageVisits.length + 1,
     url: req.originalUrl,
@@ -245,7 +250,7 @@ server.use((req, res, next) => {
     location: location
   };
   pageVisits.push(visit);
-  
+
   // Track recent requests (keep last 20)
   const request = {
     method: req.method,
@@ -255,28 +260,28 @@ server.use((req, res, next) => {
   };
   recentRequests.unshift(request);
   if (recentRequests.length > 20) recentRequests.pop();
-  
+
   // Track total requests
   analytics.totalRequests++;
-  
+
   // Track data received (request size)
   const contentLength = parseInt(req.headers['content-length']) || 0;
   analytics.dataRx += contentLength;
-  
+
   // Track endpoint calls
   const endpoint = `${req.method} ${req.path}`;
   analytics.endpointCalls[endpoint] = (analytics.endpointCalls[endpoint] || 0) + 1;
-  
+
   // Track data transmitted (response size)
   const originalSend = res.send;
-  res.send = function(data) {
+  res.send = function (data) {
     if (data) {
       const size = Buffer.byteLength(typeof data === 'string' ? data : JSON.stringify(data));
       analytics.dataTx += size;
     }
     originalSend.call(this, data);
   };
-  
+
   next();
 });
 
@@ -298,46 +303,7 @@ server.use(express.json({ limit: '250mb' }));
 server.use(express.urlencoded({ extended: true, limit: '250mb' }));
 
 // Admin Dashboard Page
-
-// let pageVisits = [];
-// let recentRequests = [];
-// const startTime = Date.now();
-
-// // Middleware to track page visits and requests
-// server.use((req, res, next) => {
-//   const ip = req.ip || req.connection.remoteAddress;
-//   const geo = geoip.lookup(ip);
-//   const visit = {
-//     count: pageVisits.length + 1,
-//     url: req.originalUrl,
-//     time: new Date().toISOString(),
-//     ip: ip,
-//     location: geo ? `${geo.city}, ${geo.country}` : 'Unknown'
-//   };
-//   pageVisits.push(visit);
-
-//   const request = {
-//     method: req.method,
-//     url: req.originalUrl,
-//     time: new Date().toISOString(),
-//     ip: ip
-//   };
-//   recentRequests.unshift(request);
-//   if (recentRequests.length > 20) recentRequests.pop();
-
-//   next();
-// });
-
-// // Request logging middleware
-// server.use((req, res, next) => {
-//   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
-//   next();
-// });
-
-// // Root route
-// server.get('/', (req, res) => {
-//   res.sendFile(path.join(__dirname, 'public', 'index.html'));
-// });
+const LOG_FILE = 'server.log';
 
 // Serve static files from public directory
 server.use(express.static('public'));
@@ -1816,6 +1782,30 @@ server.post(PROXY + '/api/auth/register', async (req, res) => {
       message: 'Account created successfully'
     });
 
+    const msg = {
+      to: newUser.email,
+      from: process.env.FROM_EMAIL,
+      subject: 'Welcome to Key-Ching! 🎉',
+      text: 'Please confirm your email to get started with Key-Ching.',
+      html: `Here is your confirmation email. Welcome aboard, ${newUser.firstName}!
+      <br><br>
+      We are thrilled to have you join the Key-Ching community. Your account has been successfully created with the username: <strong>${newUser.username}</strong>.
+      <br><br>
+      To get started, please verify your email address by clicking the link below:
+      <br><br>
+      <a href="https://yourdomain.com/verify-email?email=${encodeURIComponent(newUser.email)}">Verify Email Address</a>
+      <br><br>
+      If you did not sign up for a Key-Ching account, please ignore this email.
+      <br><br>
+      Best regards,
+      <br>
+      The Key-Ching Team`
+    };
+
+    sgMail.send(msg);
+    console.log(`Email sent to ${msg.to}`);
+
+
   } catch (error) {
     console.error('Registration error:', error);
     res.status(500).json({
@@ -1936,6 +1926,8 @@ server.get(PROXY + '/api/wallet/balance/:username', async (req, res) => {
     res.status(500).json({ error: 'Database error - wallet balance retrieval failed' });
   }
 });
+
+
 //  const response = await fetch(`${API_URL}/api/earnings/${username}?password=${localStorage.getItem("passwordtxt")}`);
 server.get(PROXY + '/api/earnings/:username', async (req, res) => {
   try {
@@ -2316,26 +2308,6 @@ server.delete(PROXY + '/api/listings/:id', async (req, res) => {
     });
   }
 });
-
-
-
-// const fd = new FormData();
-//     fd.append('title', title);
-//     fd.append('price_credits', price);
-//     fd.append('username', userData?.username || 'user_123');
-//     fd.append('email', userData?.email || '');
-//     fd.append('keys_available', keysAvailable);
-//     if (expirationDays) fd.append('expiration_days', expirationDays);
-//     if (description) fd.append('description', description);
-
-//     if (uploadMethod === 'text' && keyText.trim()) {
-//       const blob = new Blob([keyText], { type: 'text/plain' });
-//       const textFile = new File([blob], 'keys.txt', { type: 'text/plain' });
-//       fd.append('file', textFile);
-//     } else if (file) {
-//       fd.append('file', file);
-//     }
-// const { data } = await api.post(PROXY + '/api/create-key', fd);
 
 
 server.get(PROXY + '/api/createdKey/:id', async (req, res) => {
@@ -4024,7 +3996,7 @@ server.post(PROXY + '/api/db-query', async (req, res) => {
 });
 
 // ###############################################
-      // Error handles and server start up
+// Error handles and server start up
 // ###############################################      
 
 // Global error handler
