@@ -6,6 +6,7 @@ const bcrypt = require('bcrypt');
 const { v4: uuidv4 } = require('uuid');
 const axios = require('axios');
 const { OAuth2Client } = require("google-auth-library");
+const authenticateToken = require('./middleware/auth');
 
 const sgMail = require('@sendgrid/mail');
 const dotenv = require('dotenv');
