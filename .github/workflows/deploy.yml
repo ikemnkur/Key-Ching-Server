@@ -57,4 +57,4 @@ jobs:
           project_id: 'key-ching-server'
           promote: true
           # This flag merges your secrets into the app's environment
-          env_vars_file: 'env.yaml'
+          # env_vars_file: 'env.yaml'
