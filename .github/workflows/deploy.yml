@@ -28,6 +28,16 @@ jobs:
             JWT_SECRET: '${{ secrets.JWT_SECRET }}'
             SMTP_USER: '${{ secrets.SMTP_USER }}'
             SMTP_PASS: '${{ secrets.SMTP_PASS }}'
+            GOOGLE_CLIENT_ID: '${{ secrets.GOOGLE_CLIENT_ID }}'
+            GOOGLE_CLIENT_SECRET: '${{ secrets.GOOGLE_CLIENT_SECRET }}'
+            GOOGLE_REDIRECT_URI: '${{ secrets.GOOGLE_REDIRECT_URI }}'
+            SENDGRID_API_KEY:  ${{ secrets.SENDGRID_API_KEY }}'
+            SENDGRID_EMAIL_SENDER: ${{ secrets.SENDGRID_EMAIL_SENDER }}'
+            APP_NAME: ${{ secrets.APP_NAME }}'
+            JWT_ACCESS_TOKEN_SECRET: ${{ secrets.JWT_ACCESS_TOKEN_SECRET}}'
+            JWT_REFRESH_TOKEN_SECRET:${{ secrets.JWT_REFRESH_TOKEN_SECRET }}'
+            JWT_VERIFICATION_TOKEN_SECRET: ${{ secrets.JWT_VERIFICATION_TOKEN_SECRET }}'
+      
           EOF
 
       # 1. Authenticate with Google Cloud using OIDC

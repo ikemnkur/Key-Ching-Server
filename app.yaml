@@ -24,6 +24,8 @@ env_variables:
   RATE_LIMIT_WINDOW_MS: '900000'
   RATE_LIMIT_MAX_REQUESTS: '100'
 
+  FRONTEND_BASE_URL: Key-Ching.com
+
 service: default
 
 instance_class: F1
