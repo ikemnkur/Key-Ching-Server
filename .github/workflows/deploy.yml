@@ -11,9 +11,7 @@ permissions: # Required for OIDC authentication
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+   
 
    # 1. Create a clean app.yaml with necessary GAE settings
       - name: Create app.yaml
