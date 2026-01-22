@@ -13,6 +13,10 @@ const dotenv = require('dotenv');
 
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
+
+// const PROXY = process.env.PROXY || '';
+const PROXY = ''; // No proxy in production
+
 const server = express();
 
 // Database configuration
@@ -106,8 +110,289 @@ server.get("/protected", isAuthenticated, (req, res) => {
   res.json({ message: "You are authenticated!", user: req.user });
 });
 
+// ============================================
+// DATABASE MANAGEMENT ENDPOINTS
+// ============================================
 
-// Server configuration
+
+// Routes for basic CRUD operations on all tables
+
+
+// Basic RESTful routes for all tables
+server.get(PROXY + '/api/:table', async (req, res) => {
+  try {
+    const table = req.params.table;
+    const allowedTables = ['userData', 'buyCredits', 'redeemCredits', 'earnings', 'unlocks', 'createdKeys', 'notifications', 'wallet', 'reports', 'supportTickets'];
+
+    if (!allowedTables.includes(table)) {
+      return res.status(400).json({ error: 'Invalid table name' });
+    }
+
+    const [rows] = await pool.execute(`SELECT * FROM ${table}`);
+    res.json(rows);
+  } catch (error) {
+    console.error(`Get ${req.params.table} error:`, error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+server.get(PROXY + '/api/:table/:id', async (req, res) => {
+  try {
+    const { table, id } = req.params;
+    const allowedTables = ['userData', 'buyCredits', 'redeemCredits', 'earnings', 'unlocks', 'notifications', 'wallet', 'reports', 'supportTickets'];
+
+    if (!allowedTables.includes(table)) {
+      return res.status(400).json({ error: 'Invalid table name' });
+    }
+
+    const [rows] = await pool.execute(`SELECT * FROM ${table} WHERE id = ?`, [id]);
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Record not found' });
+    }
+
+    res.json(rows[0]);
+  } catch (error) {
+    console.error(`Get ${req.params.table} by ID error:`, error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+server.patch(PROXY + '/api/:table/:id', async (req, res) => {
+  try {
+    const { table, id } = req.params;
+    const allowedTables = ['userData', 'buyCredits', 'redeemCredits', 'earnings', 'unlocks', 'createdKeys', 'notifications', 'wallet', 'reports', 'supportTickets'];
+
+    if (!allowedTables.includes(table)) {
+      return res.status(400).json({ error: 'Invalid table name' });
+    }
+
+    const updateData = req.body;
+    const columns = Object.keys(updateData);
+    const values = Object.values(updateData);
+
+    if (columns.length === 0) {
+      return res.status(400).json({ error: 'No data to update' });
+    }
+
+    const setClause = columns.map(col => `${col} = ?`).join(', ');
+    const query = `UPDATE ${table} SET ${setClause} WHERE id = ?`;
+
+    const [result] = await pool.execute(query, [...values, id]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Record not found' });
+    }
+
+    // Get updated record
+    const [updated] = await pool.execute(`SELECT * FROM ${table} WHERE id = ?`, [id]);
+    res.json(updated[0]);
+  } catch (error) {
+    console.error(`Update ${req.params.table} error:`, error);
+    res.status(500).json({ error: 'Database error - update failed (patch)' });
+  }
+});
+
+
+
+// Serve database manager HTML page
+server.get(PROXY + '/db-manager', (req, res) => {
+  res.sendFile(__dirname + '/public/db-manager.html');
+});
+
+// Get database statistics
+server.get(PROXY + '/api/db-stats', async (req, res) => {
+  try {
+    // Get database size
+    const [sizeResult] = await pool.execute(`
+      SELECT 
+        ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS size_mb
+      FROM information_schema.TABLES 
+      WHERE table_schema = ?
+    `, [dbConfig.database]);
+
+    // Get total tables
+    const [tablesResult] = await pool.execute(`
+      SELECT COUNT(*) as count 
+      FROM information_schema.TABLES 
+      WHERE table_schema = ?
+    `, [dbConfig.database]);
+
+    // Get active connections
+    const [connectionsResult] = await pool.execute(`
+      SELECT COUNT(*) as count 
+      FROM information_schema.PROCESSLIST 
+      WHERE DB = ?
+    `, [dbConfig.database]);
+
+    // Get total records across all tables
+    const [allTables] = await pool.execute(`
+      SELECT table_name 
+      FROM information_schema.TABLES 
+      WHERE table_schema = ?
+    `, [dbConfig.database]);
+
+    let totalRecords = 0;
+    for (const table of allTables) {
+      const [countResult] = await pool.execute(`SELECT COUNT(*) as count FROM ${table.table_name}`);
+      totalRecords += countResult[0].count;
+    }
+
+    // Get table details
+    const [tableDetails] = await pool.execute(`
+      SELECT 
+        table_name,
+        table_rows,
+        ROUND((data_length + index_length) / 1024 / 1024, 2) AS size_mb,
+        engine,
+        table_collation
+      FROM information_schema.TABLES 
+      WHERE table_schema = ?
+      ORDER BY table_name
+    `, [dbConfig.database]);
+
+    res.json({
+      databaseSize: sizeResult[0].size_mb,
+      totalTables: tablesResult[0].count,
+      activeConnections: connectionsResult[0].count,
+      totalRecords: totalRecords,
+      tables: tableDetails,
+      databaseName: dbConfig.database,
+      host: dbConfig.host,
+      port: dbConfig.port
+    });
+  } catch (error) {
+    console.error('Database stats error:', error);
+    res.status(500).json({ error: 'Failed to retrieve database statistics', message: error.message });
+  }
+});
+
+// Get list of tables with details
+server.get(PROXY + '/api/db-tables', async (req, res) => {
+  try {
+    const [tables] = await pool.execute(`
+      SELECT 
+        table_name as name,
+        table_rows as rows,
+        ROUND((data_length + index_length) / 1024 / 1024, 2) AS size,
+        engine,
+        create_time,
+        update_time
+      FROM information_schema.TABLES 
+      WHERE table_schema = ?
+      ORDER BY table_name
+    `, [dbConfig.database]);
+
+    const formattedTables = tables.map(table => ({
+      name: table.name,
+      rows: table.rows,
+      size: `${table.size} MB`,
+      engine: table.engine,
+      created: table.create_time,
+      updated: table.update_time
+    }));
+
+    res.json({ tables: formattedTables });
+  } catch (error) {
+    console.error('Get tables error:', error);
+    res.status(500).json({ error: 'Failed to retrieve tables', message: error.message });
+  }
+});
+
+// Get records from a specific table with pagination and search
+server.get(PROXY + '/api/db-records/:tableName', async (req, res) => {
+  try {
+    const { tableName } = req.params;
+    const limit = parseInt(req.query.limit) || 50;
+    const offset = parseInt(req.query.offset) || 0;
+    const search = req.query.search || '';
+
+    // Validate table name exists
+    const [tableCheck] = await pool.execute(`
+      SELECT table_name 
+      FROM information_schema.TABLES 
+      WHERE table_schema = ? AND table_name = ?
+    `, [dbConfig.database, tableName]);
+
+    if (tableCheck.length === 0) {
+      return res.status(404).json({ error: 'Table not found' });
+    }
+
+    // Get total count
+    let countQuery = `SELECT COUNT(*) as total FROM ${tableName}`;
+    let dataQuery = `SELECT * FROM ${tableName}`;
+    const params = [];
+
+    // Add search filter if provided
+    if (search) {
+      // Get column names
+      const [columns] = await pool.execute(`
+        SELECT COLUMN_NAME 
+        FROM information_schema.COLUMNS 
+        WHERE table_schema = ? AND table_name = ?
+      `, [dbConfig.database, tableName]);
+
+      const searchConditions = columns.map(col => `${col.COLUMN_NAME} LIKE ?`).join(' OR ');
+      const searchParams = columns.map(() => `%${search}%`);
+
+      countQuery += ` WHERE ${searchConditions}`;
+      dataQuery += ` WHERE ${searchConditions}`;
+      params.push(...searchParams);
+    }
+
+    // Get total count
+    const [countResult] = await pool.execute(countQuery, params);
+    const total = countResult[0].total;
+
+    // Get records with pagination
+    dataQuery += ` LIMIT ? OFFSET ?`;
+    const [records] = await pool.execute(dataQuery, [...params, limit, offset]);
+
+    res.json({
+      records,
+      total,
+      limit,
+      offset
+    });
+  } catch (error) {
+    console.error('Get records error:', error);
+    res.status(500).json({ error: 'Failed to retrieve records', message: error.message });
+  }
+});
+
+// Execute raw SQL query (SELECT only for safety)
+server.post(PROXY + '/api/db-query', async (req, res) => {
+  try {
+    const { query } = req.body;
+
+    if (!query) {
+      return res.status(400).json({ error: 'Query is required' });
+    }
+
+    // Only allow SELECT queries for safety
+    const trimmedQuery = query.trim().toUpperCase();
+    if (!trimmedQuery.startsWith('SELECT') && !trimmedQuery.startsWith('SHOW') && !trimmedQuery.startsWith('DESCRIBE')) {
+      return res.status(403).json({ error: 'Only SELECT, SHOW, and DESCRIBE queries are allowed' });
+    }
+
+    const [results] = await pool.execute(query);
+
+    res.json({
+      success: true,
+      results,
+      rowCount: results.length
+    });
+  } catch (error) {
+    console.error('Query execution error:', error);
+    res.status(500).json({ error: 'Query execution failed', message: error.message });
+  }
+});
+
+
+
+// ###########################################################
+// Server Operation configuration
+// ###########################################################
 
 // Analytics tracking
 const analytics = {
@@ -202,11 +487,8 @@ const corsOptions = {
   optionsSuccessStatus: 200
 };
 
-const PROXY = process.env.PROXY || '';
 
 server.use(cors(corsOptions));
-// server.use(express.json());
-
 
 server.use(express.json({ limit: '10mb' }));
 server.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -347,6 +629,8 @@ server.use((req, res, next) => {
 server.get('/', (req, res) => {
   res.sendFile(__dirname + '/public/index.html');
 });
+
+const fs = require('fs');
 
 // Endpoint to fetch and display the raw logs
 server.get('/log-file', (req, res) => {
@@ -1803,8 +2087,14 @@ server.post(PROXY + '/api/auth/register', async (req, res) => {
       The Key-Ching Team`
     };
 
-    sgMail.send(msg);
-    console.log(`Email sent to ${msg.to}`);
+    // Send email with error handling
+    try {
+      await sgMail.send(msg);
+      console.log(`✅ Email sent to ${msg.to}`);
+    } catch (emailError) {
+      console.error('⚠️ Failed to send welcome email:', emailError.message);
+      // Don't fail the registration if email fails
+    }
 
 
   } catch (error) {
@@ -3466,40 +3756,6 @@ server.post(PROXY + '/api/upload/transaction-screenshot/:username/:txHash', asyn
 });
 
 
-
-// // CREATE TABLE
-//   `userData` (
-//     `id` varchar(10) NOT NULL,
-//     `username` varchar(50) DEFAULT NULL,
-//     `email` varchar(100) DEFAULT NULL,
-//     `credits` int DEFAULT NULL,
-//     `passwordHash` varchar(255) DEFAULT NULL,
-//     `accountType` enum('buyer', 'seller') DEFAULT NULL,
-//     `lastLogin` datetime DEFAULT NULL,
-//     `loginStatus` tinyint(1) DEFAULT NULL,
-//     `firstName` varchar(50) DEFAULT NULL,
-//     `lastName` varchar(50) DEFAULT NULL,
-//     `phoneNumber` varchar(20) DEFAULT NULL,
-//     `birthDate` date DEFAULT NULL,
-//     `encryptionKey` varchar(100) DEFAULT NULL,
-//     `reportCount` int DEFAULT NULL,
-//     `isBanned` tinyint(1) DEFAULT NULL,
-//     `banReason` text,
-//     `banDate` datetime DEFAULT NULL,
-//     `banDuration` int DEFAULT NULL,
-//     `createdAt` bigint DEFAULT NULL,
-//     `updatedAt` bigint DEFAULT NULL,
-//     `twoFactorEnabled` tinyint(1) DEFAULT '0',
-//     `twoFactorSecret` varchar(50) DEFAULT NULL,
-//     `recoveryCodes` json DEFAULT NULL,
-//     `profilePicture` varchar(255) DEFAULT NULL,
-//     `bio` text,
-//     `socialLinks` json DEFAULT NULL,
-//     PRIMARY KEY (`id`),
-//     UNIQUE KEY `username` (`username`),
-//     UNIQUE KEY `email` (`email`)
-//   ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci
-
 /**
  * POST /api/profile-picture/:username
  * Accepts a multipart/form-data upload for a user's profile picture.
@@ -3720,283 +3976,6 @@ server.post(PROXY + '/api/redemptions/:username', async (req, res) => {
     res.status(500).json({ error: 'Database error' });
   }
 });
-
-
-
-// Basic RESTful routes for all tables
-server.get(PROXY + '/api/:table', async (req, res) => {
-  try {
-    const table = req.params.table;
-    const allowedTables = ['userData', 'buyCredits', 'redeemCredits', 'earnings', 'unlocks', 'createdKeys', 'notifications', 'wallet', 'reports', 'supportTickets'];
-
-    if (!allowedTables.includes(table)) {
-      return res.status(400).json({ error: 'Invalid table name' });
-    }
-
-    const [rows] = await pool.execute(`SELECT * FROM ${table}`);
-    res.json(rows);
-  } catch (error) {
-    console.error(`Get ${req.params.table} error:`, error);
-    res.status(500).json({ error: 'Database error' });
-  }
-});
-
-server.get(PROXY + '/api/:table/:id', async (req, res) => {
-  try {
-    const { table, id } = req.params;
-    const allowedTables = ['userData', 'buyCredits', 'redeemCredits', 'earnings', 'unlocks', 'notifications', 'wallet', 'reports', 'supportTickets'];
-
-    if (!allowedTables.includes(table)) {
-      return res.status(400).json({ error: 'Invalid table name' });
-    }
-
-    const [rows] = await pool.execute(`SELECT * FROM ${table} WHERE id = ?`, [id]);
-
-    if (rows.length === 0) {
-      return res.status(404).json({ error: 'Record not found' });
-    }
-
-    res.json(rows[0]);
-  } catch (error) {
-    console.error(`Get ${req.params.table} by ID error:`, error);
-    res.status(500).json({ error: 'Database error' });
-  }
-});
-
-server.patch(PROXY + '/api/:table/:id', async (req, res) => {
-  try {
-    const { table, id } = req.params;
-    const allowedTables = ['userData', 'buyCredits', 'redeemCredits', 'earnings', 'unlocks', 'createdKeys', 'notifications', 'wallet', 'reports', 'supportTickets'];
-
-    if (!allowedTables.includes(table)) {
-      return res.status(400).json({ error: 'Invalid table name' });
-    }
-
-    const updateData = req.body;
-    const columns = Object.keys(updateData);
-    const values = Object.values(updateData);
-
-    if (columns.length === 0) {
-      return res.status(400).json({ error: 'No data to update' });
-    }
-
-    const setClause = columns.map(col => `${col} = ?`).join(', ');
-    const query = `UPDATE ${table} SET ${setClause} WHERE id = ?`;
-
-    const [result] = await pool.execute(query, [...values, id]);
-
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ error: 'Record not found' });
-    }
-
-    // Get updated record
-    const [updated] = await pool.execute(`SELECT * FROM ${table} WHERE id = ?`, [id]);
-    res.json(updated[0]);
-  } catch (error) {
-    console.error(`Update ${req.params.table} error:`, error);
-    res.status(500).json({ error: 'Database error - update failed (patch)' });
-  }
-});
-
-
-// ============================================
-// DATABASE MANAGEMENT ENDPOINTS
-// ============================================
-
-// Serve database manager HTML page
-server.get(PROXY + '/db-manager', (req, res) => {
-  res.sendFile(__dirname + '/public/db-manager.html');
-});
-
-// Get database statistics
-server.get(PROXY + '/api/db-stats', async (req, res) => {
-  try {
-    // Get database size
-    const [sizeResult] = await pool.execute(`
-      SELECT 
-        ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS size_mb
-      FROM information_schema.TABLES 
-      WHERE table_schema = ?
-    `, [dbConfig.database]);
-
-    // Get total tables
-    const [tablesResult] = await pool.execute(`
-      SELECT COUNT(*) as count 
-      FROM information_schema.TABLES 
-      WHERE table_schema = ?
-    `, [dbConfig.database]);
-
-    // Get active connections
-    const [connectionsResult] = await pool.execute(`
-      SELECT COUNT(*) as count 
-      FROM information_schema.PROCESSLIST 
-      WHERE DB = ?
-    `, [dbConfig.database]);
-
-    // Get total records across all tables
-    const [allTables] = await pool.execute(`
-      SELECT table_name 
-      FROM information_schema.TABLES 
-      WHERE table_schema = ?
-    `, [dbConfig.database]);
-
-    let totalRecords = 0;
-    for (const table of allTables) {
-      const [countResult] = await pool.execute(`SELECT COUNT(*) as count FROM ${table.table_name}`);
-      totalRecords += countResult[0].count;
-    }
-
-    // Get table details
-    const [tableDetails] = await pool.execute(`
-      SELECT 
-        table_name,
-        table_rows,
-        ROUND((data_length + index_length) / 1024 / 1024, 2) AS size_mb,
-        engine,
-        table_collation
-      FROM information_schema.TABLES 
-      WHERE table_schema = ?
-      ORDER BY table_name
-    `, [dbConfig.database]);
-
-    res.json({
-      databaseSize: sizeResult[0].size_mb,
-      totalTables: tablesResult[0].count,
-      activeConnections: connectionsResult[0].count,
-      totalRecords: totalRecords,
-      tables: tableDetails,
-      databaseName: dbConfig.database,
-      host: dbConfig.host,
-      port: dbConfig.port
-    });
-  } catch (error) {
-    console.error('Database stats error:', error);
-    res.status(500).json({ error: 'Failed to retrieve database statistics', message: error.message });
-  }
-});
-
-// Get list of tables with details
-server.get(PROXY + '/api/db-tables', async (req, res) => {
-  try {
-    const [tables] = await pool.execute(`
-      SELECT 
-        table_name as name,
-        table_rows as rows,
-        ROUND((data_length + index_length) / 1024 / 1024, 2) AS size,
-        engine,
-        create_time,
-        update_time
-      FROM information_schema.TABLES 
-      WHERE table_schema = ?
-      ORDER BY table_name
-    `, [dbConfig.database]);
-
-    const formattedTables = tables.map(table => ({
-      name: table.name,
-      rows: table.rows,
-      size: `${table.size} MB`,
-      engine: table.engine,
-      created: table.create_time,
-      updated: table.update_time
-    }));
-
-    res.json({ tables: formattedTables });
-  } catch (error) {
-    console.error('Get tables error:', error);
-    res.status(500).json({ error: 'Failed to retrieve tables', message: error.message });
-  }
-});
-
-// Get records from a specific table with pagination and search
-server.get(PROXY + '/api/db-records/:tableName', async (req, res) => {
-  try {
-    const { tableName } = req.params;
-    const limit = parseInt(req.query.limit) || 50;
-    const offset = parseInt(req.query.offset) || 0;
-    const search = req.query.search || '';
-
-    // Validate table name exists
-    const [tableCheck] = await pool.execute(`
-      SELECT table_name 
-      FROM information_schema.TABLES 
-      WHERE table_schema = ? AND table_name = ?
-    `, [dbConfig.database, tableName]);
-
-    if (tableCheck.length === 0) {
-      return res.status(404).json({ error: 'Table not found' });
-    }
-
-    // Get total count
-    let countQuery = `SELECT COUNT(*) as total FROM ${tableName}`;
-    let dataQuery = `SELECT * FROM ${tableName}`;
-    const params = [];
-
-    // Add search filter if provided
-    if (search) {
-      // Get column names
-      const [columns] = await pool.execute(`
-        SELECT COLUMN_NAME 
-        FROM information_schema.COLUMNS 
-        WHERE table_schema = ? AND table_name = ?
-      `, [dbConfig.database, tableName]);
-
-      const searchConditions = columns.map(col => `${col.COLUMN_NAME} LIKE ?`).join(' OR ');
-      const searchParams = columns.map(() => `%${search}%`);
-
-      countQuery += ` WHERE ${searchConditions}`;
-      dataQuery += ` WHERE ${searchConditions}`;
-      params.push(...searchParams);
-    }
-
-    // Get total count
-    const [countResult] = await pool.execute(countQuery, params);
-    const total = countResult[0].total;
-
-    // Get records with pagination
-    dataQuery += ` LIMIT ? OFFSET ?`;
-    const [records] = await pool.execute(dataQuery, [...params, limit, offset]);
-
-    res.json({
-      records,
-      total,
-      limit,
-      offset
-    });
-  } catch (error) {
-    console.error('Get records error:', error);
-    res.status(500).json({ error: 'Failed to retrieve records', message: error.message });
-  }
-});
-
-// Execute raw SQL query (SELECT only for safety)
-server.post(PROXY + '/api/db-query', async (req, res) => {
-  try {
-    const { query } = req.body;
-
-    if (!query) {
-      return res.status(400).json({ error: 'Query is required' });
-    }
-
-    // Only allow SELECT queries for safety
-    const trimmedQuery = query.trim().toUpperCase();
-    if (!trimmedQuery.startsWith('SELECT') && !trimmedQuery.startsWith('SHOW') && !trimmedQuery.startsWith('DESCRIBE')) {
-      return res.status(403).json({ error: 'Only SELECT, SHOW, and DESCRIBE queries are allowed' });
-    }
-
-    const [results] = await pool.execute(query);
-
-    res.json({
-      success: true,
-      results,
-      rowCount: results.length
-    });
-  } catch (error) {
-    console.error('Query execution error:', error);
-    res.status(500).json({ error: 'Query execution failed', message: error.message });
-  }
-});
-
-
 
 
 
