@@ -12,14 +12,20 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
 
-      # Create env.yaml from GitHub Secrets
-      - name: Create env.yaml
+   # 1. Create a clean app.yaml with necessary GAE settings
+      - name: Initialize app.yaml
         run: |
-          cat > env.yaml << EOF
+          cat > app.yaml << EOF
+          runtime: nodejs22  # Update to latest 2026 LTS version
+          instance_class: F1
           env_variables:
+          EOF
+
+      # 2. Append secrets to app.yaml in correct YAML format
+      - name: Insert secrets into app.yaml
+        run: |
+          cat >> app.yaml << EOF
             DB_PASSWORD: '${{ secrets.DB_PASSWORD }}'
             STRIPE_SECRET_KEY: '${{ secrets.STRIPE_SECRET_KEY }}'
             STRIPE_WEBHOOK_SECRET: '${{ secrets.STRIPE_WEBHOOK_SECRET }}'
@@ -31,16 +37,47 @@ jobs:
             GOOGLE_CLIENT_ID: '${{ secrets.GOOGLE_CLIENT_ID }}'
             GOOGLE_CLIENT_SECRET: '${{ secrets.GOOGLE_CLIENT_SECRET }}'
             GOOGLE_REDIRECT_URI: '${{ secrets.GOOGLE_REDIRECT_URI }}'
-            SENDGRID_API_KEY:  ${{ secrets.SENDGRID_API_KEY }}'
-            SENDGRID_EMAIL_SENDER: ${{ secrets.SENDGRID_EMAIL_SENDER }}'
-            APP_NAME: ${{ secrets.APP_NAME }}'
-            JWT_ACCESS_TOKEN_SECRET: ${{ secrets.JWT_ACCESS_TOKEN_SECRET}}'
-            JWT_REFRESH_TOKEN_SECRET:${{ secrets.JWT_REFRESH_TOKEN_SECRET }}'
-            JWT_VERIFICATION_TOKEN_SECRET: ${{ secrets.JWT_VERIFICATION_TOKEN_SECRET }}'
-      
+            SENDGRID_API_KEY: '${{ secrets.SENDGRID_API_KEY }}'
+            SENDGRID_EMAIL_SENDER: '${{ secrets.SENDGRID_EMAIL_SENDER }}'
+            APP_NAME: '${{ secrets.APP_NAME }}'
+            JWT_ACCESS_TOKEN_SECRET: '${{ secrets.JWT_ACCESS_TOKEN_SECRET }}'
+            JWT_REFRESH_TOKEN_SECRET: '${{ secrets.JWT_REFRESH_TOKEN_SECRET }}'
+            JWT_VERIFICATION_TOKEN_SECRET: '${{ secrets.JWT_VERIFICATION_TOKEN_SECRET }}'
+            
+            DB_HOST: '34.57.139.74'
+            DB_PORT: '3306'
+            DB_USER: 'remote'
+            DB_NAME: 'KeyChingDB'
+            DB_4_ADS_NAME: 'ad_system'
+            
+            # Public API endpoints
+            SOLANA_RPC_URL: 'https://api.mainnet-beta.solana.com'
+            BTC_ESPLORA: 'https://blockstream.info/api'
+            LTC_ESPLORA: 'https://litecoinspace.org/api'
+            
+            # Non-sensitive SMTP config
+            SMTP_HOST: 'smtp.gmail.com'
+            SMTP_PORT: '587'
+            SMTP_SECURE: 'false'
+            
+            # Ad system config
+            AD_PORT: '3001'
+            MAX_FILE_SIZE: '2621440'
+            RATE_LIMIT_WINDOW_MS: '900000'
+            RATE_LIMIT_MAX_REQUESTS: '100'
+
+            FRONTEND_BASE_URL: 'Key-Ching.com'
+
+          service: default
+
+          instance_class: F1
+          automatic_scaling:
+            max_instances: 1
+            min_instances: 0
+
           EOF
 
-      # 1. Authenticate with Google Cloud using OIDC
+      # 3. Authenticate with Google Cloud using OIDC
       - id: 'auth'
         name: 'Authenticate to Google Cloud'
         uses: 'google-github-actions/auth@v2'
@@ -48,7 +85,7 @@ jobs:
           workload_identity_provider: 'projects/294172706997/locations/global/workloadIdentityPools/my-pool/providers/my-provider'
           service_account: 'key-ching-server@appspot.gserviceaccount.com'
 
-      # 2. Deploy with the env-vars-file flag
+      # 4. Deploy using the updated app.yaml
       - id: 'deploy'
         name: 'Deploy Services'
         uses: 'google-github-actions/deploy-appengine@v2'
@@ -56,5 +93,3 @@ jobs:
           deliverables: 'app.yaml'
           project_id: 'key-ching-server'
           promote: true
-          # This flag merges your secrets into the app's environment
-          # env_vars_file: 'env.yaml'

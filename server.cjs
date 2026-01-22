@@ -466,14 +466,15 @@ const corsOptions = {
       'http://localhost:5001',
       'https://key-ching.com',
       'https://www.key-ching.com',
-      'https://microtrax.netlify.app',
+      // 'https://microtrax.netlify.app',
       "https://servers4sqldb.uc.r.appspot.com",
-      "https://orca-app-j32vd.ondigitalocean.app",
+      // "https://orca-app-j32vd.ondigitalocean.app",
       "https://monkfish-app-mllt8.ondigitalocean.app/",
       "https://sea-lion-app-xe9tq.ondigitalocean.app/",
       "http://localhost:5173",
       "http://localhost:5174",
       "https://whale-app-trf6r.ondigitalocean.app",
+      "https://key-ching-server.uc.r.appspot.com",
       "*"
       // Add any other origins you want to allow
     ];
@@ -2078,7 +2079,7 @@ server.post(PROXY + '/api/auth/register', async (req, res) => {
       <br><br>
       To get started, please verify your email address by clicking the link below:
       <br><br>
-      <a href="https://yourdomain.com/verify-email?email=${encodeURIComponent(newUser.email)}">Verify Email Address</a>
+      <a href="https://key-ching.com/verify-email?email=${encodeURIComponent(newUser.email)}">Verify Email Address</a>
       <br><br>
       If you did not sign up for a Key-Ching account, please ignore this email.
       <br><br>
@@ -2155,6 +2156,40 @@ module.exports = {
   sendPasswordResetEmail
 };
 
+
+server.post(PROXY + '/verify-email?:email', async (req, res) => {
+  // https://key-ching.com/verify-email?email=${encodeURIComponent(newUser.email)}
+  let email = req.param.email;
+  console.log("verifying new user email @: ", email)
+  try {
+
+    if (email) {
+      // Update login status in database
+      await pool.execute(
+        'UPDATE userData SET verified = true WHERE email = ?',
+        [email]
+      );
+    }
+
+    res.json({
+      success: true,
+      message: 'User account has been successfully verified.'
+    });
+
+  } catch (error) {
+    console.error('Logout error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error occurred during account verification'
+    });
+  }
+});
+
+
+
+  // #####################################
+// Server API Routes
+// ######################################
 
 // Custom logout route
 server.post(PROXY + '/api/auth/logout', async (req, res) => {
