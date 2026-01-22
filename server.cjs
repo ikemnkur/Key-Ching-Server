@@ -2157,18 +2157,32 @@ module.exports = {
 };
 
 
-server.post(PROXY + '/verify-email?:email', async (req, res) => {
-  // https://key-ching.com/verify-email?email=${encodeURIComponent(newUser.email)}
-  let email = req.param.email;
-  console.log("verifying new user email @: ", email)
-  try {
+server.post(PROXY + '/verify-email', async (req, res) => {
+  
+  const email = req.query.email; 
+  
+  console.log("Verifying new user email @:", email);
 
-    if (email) {
-      // Update login status in database
-      await pool.execute(
-        'UPDATE userData SET verified = true WHERE email = ?',
-        [email]
-      );
+  try {
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email parameter is required.'
+      });
+    }
+
+    // Update login status in database
+    const [result] = await pool.execute(
+      'UPDATE userData SET verified = true WHERE email = ?',
+      [email]
+    );
+
+    // Optional: Check if any row was actually updated
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found.'
+      });
     }
 
     res.json({
@@ -2177,7 +2191,8 @@ server.post(PROXY + '/verify-email?:email', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Logout error:', error);
+    // 3. Updated log label for clarity
+    console.error('Verification error:', error); 
     res.status(500).json({
       success: false,
       message: 'Server error occurred during account verification'
