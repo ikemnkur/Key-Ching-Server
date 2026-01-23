@@ -84,8 +84,6 @@ jobs:
       # 3. Deploy using the updated app.yaml
       - id: 'deploy'
         name: 'Deploy Services'
-        uses: 'google-github-actions/deploy-appengine@v2'
-        with:
-          deliverables: 'app1.yaml'
-          project_id: 'key-ching-server'
-          promote: true
+        runs: |
+          gcloud app deploy app1.yaml --project=key-ching-server --promote --quiet  
+          
