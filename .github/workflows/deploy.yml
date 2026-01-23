@@ -18,7 +18,7 @@ jobs:
    # 1. Create a clean app.yaml with necessary GAE settings
       - name: Create app.yaml
         run: |
-          cat > app.yaml << EOF
+          cat > app1.yaml << EOF
           runtime: nodejs22
           service: default
           instance_class: F1
@@ -86,6 +86,6 @@ jobs:
         name: 'Deploy Services'
         uses: 'google-github-actions/deploy-appengine@v2'
         with:
-          deliverables: 'app.yaml'
+          deliverables: 'app1.yaml'
           project_id: 'key-ching-server'
           promote: true
