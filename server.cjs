@@ -7,6 +7,7 @@ const { v4: uuidv4 } = require('uuid');
 const axios = require('axios');
 const { OAuth2Client } = require("google-auth-library");
 const authenticateToken = require('./middleware/auth');
+const jwt = require('jsonwebtoken');
 
 const sgMail = require('@sendgrid/mail');
 const dotenv = require('dotenv');
@@ -119,7 +120,7 @@ server.get("/protected", isAuthenticated, (req, res) => {
 
 
 // Basic RESTful routes for all tables
-server.get(PROXY + '/api/:table', async (req, res) => {
+server.get(PROXY + '/db/tables/table', async (req, res) => {
   try {
     const table = req.params.table;
     const allowedTables = ['userData', 'buyCredits', 'redeemCredits', 'earnings', 'unlocks', 'createdKeys', 'notifications', 'wallet', 'reports', 'supportTickets'];
@@ -136,7 +137,7 @@ server.get(PROXY + '/api/:table', async (req, res) => {
   }
 });
 
-server.get(PROXY + '/api/:table/:id', async (req, res) => {
+server.get(PROXY + '/db/tables/table/:id', async (req, res) => {
   try {
     const { table, id } = req.params;
     const allowedTables = ['userData', 'buyCredits', 'redeemCredits', 'earnings', 'unlocks', 'notifications', 'wallet', 'reports', 'supportTickets'];
@@ -158,7 +159,7 @@ server.get(PROXY + '/api/:table/:id', async (req, res) => {
   }
 });
 
-server.patch(PROXY + '/api/:table/:id', async (req, res) => {
+server.patch(PROXY + '/db/tables/table/:id', async (req, res) => {
   try {
     const { table, id } = req.params;
     const allowedTables = ['userData', 'buyCredits', 'redeemCredits', 'earnings', 'unlocks', 'createdKeys', 'notifications', 'wallet', 'reports', 'supportTickets'];
@@ -196,12 +197,12 @@ server.patch(PROXY + '/api/:table/:id', async (req, res) => {
 
 
 // Serve database manager HTML page
-server.get(PROXY + '/db-manager', (req, res) => {
+server.get(PROXY + '/db/manager', (req, res) => {
   res.sendFile(__dirname + '/public/db-manager.html');
 });
 
 // Get database statistics
-server.get(PROXY + '/api/db-stats', async (req, res) => {
+server.get(PROXY + '/db/stats', async (req, res) => {
   try {
     // Get database size
     const [sizeResult] = await pool.execute(`
@@ -268,7 +269,7 @@ server.get(PROXY + '/api/db-stats', async (req, res) => {
 });
 
 // Get list of tables with details
-server.get(PROXY + '/api/db-tables', async (req, res) => {
+server.get(PROXY + '/db/tables', async (req, res) => {
   try {
     const [tables] = await pool.execute(`
       SELECT 
@@ -300,7 +301,7 @@ server.get(PROXY + '/api/db-tables', async (req, res) => {
 });
 
 // Get records from a specific table with pagination and search
-server.get(PROXY + '/api/db-records/:tableName', async (req, res) => {
+server.get(PROXY + '/db/tables/table/:tableName', async (req, res) => {
   try {
     const { tableName } = req.params;
     const limit = parseInt(req.query.limit) || 50;
@@ -361,7 +362,7 @@ server.get(PROXY + '/api/db-records/:tableName', async (req, res) => {
 });
 
 // Execute raw SQL query (SELECT only for safety)
-server.post(PROXY + '/api/db-query', async (req, res) => {
+server.post(PROXY + '/db/query', async (req, res) => {
   try {
     const { query } = req.body;
 
@@ -1798,8 +1799,17 @@ server.post(PROXY + '/api/auth/login', async (req, res) => {
         [currentDateTime, userEmail]
       );
 
-      // Generate a proper JWT-like token (in production, use actual JWT)
-      const token = Buffer.from(`${user.id}_${Date.now()}_${Math.random()}`).toString('base64');
+      // Generate a real JWT for the client
+      if (!process.env.JWT_SECRET) {
+        console.error('❌ CRITICAL: JWT_SECRET not configured in environment variables!');
+        return res.status(500).json({ success: false, message: 'Server configuration error' });
+      }
+
+      const token = jwt.sign(
+        { id: user.id, email: user.email, username: user.username },
+        process.env.JWT_SECRET,
+        { expiresIn: '1h' }
+      );
 
       // Track authenticated user
       if (user.username) {
@@ -1828,7 +1838,8 @@ server.post(PROXY + '/api/auth/login', async (req, res) => {
 });
 
 // Custom fetch account details route
-server.post(PROXY + '/api/user', async (req, res) => {
+server.post(PROXY + '/api/user', authenticateToken, async (req, res) => {
+// server.post(PROXY + '/api/user', async (req, res) => {
   console.log("Fetching user details...");
   try {
     const { email, username, password } = req.body;
@@ -2158,9 +2169,9 @@ module.exports = {
 
 
 server.post(PROXY + '/verify-email', async (req, res) => {
-  
-  const email = req.query.email; 
-  
+
+  const email = req.query.email;
+
   console.log("Verifying new user email @:", email);
 
   try {
@@ -2192,7 +2203,7 @@ server.post(PROXY + '/verify-email', async (req, res) => {
 
   } catch (error) {
     // 3. Updated log label for clarity
-    console.error('Verification error:', error); 
+    console.error('Verification error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error occurred during account verification'
@@ -2202,7 +2213,7 @@ server.post(PROXY + '/verify-email', async (req, res) => {
 
 
 
-  // #####################################
+// #####################################
 // Server API Routes
 // ######################################
 
@@ -2229,6 +2240,31 @@ server.post(PROXY + '/api/auth/logout', async (req, res) => {
       success: false,
       message: 'Server error occurred during logout'
     });
+  }
+});
+
+server.get(PROXY + '/api/wallet', authenticateToken, async (req, res) => {
+
+  try {
+    console.log("Fetching wallet details for user:", req.user);
+
+    const user = req.user;
+
+    const [users] = await pool.execute(
+      'SELECT credits FROM userData WHERE username = ?',
+      [user.username]
+    );
+
+    const userFromDb = users[0];
+
+    const credits = (userFromDb && userFromDb.credits != null)
+      ? userFromDb.credits
+      : (user && user.credits != null ? user.credits : 0);
+
+    return res.json({ balance: credits, credits });
+  } catch (error) {
+    console.error('Wallet balance error:', error);
+    return res.status(500).json({ error: 'Database error - wallet balance retrieval failed' });
   }
 });
 
@@ -2300,6 +2336,30 @@ server.get(PROXY + '/api/earnings/:username', async (req, res) => {
   } catch (error) {
     console.error('Earnings retrieval error:', error);
     res.status(500).json({ error: 'Database error - earnings retrieval failed' });
+  }
+});
+
+
+server.get(PROXY + '/api/unlocks/:username', async (req, res) => {
+  try {
+    const username = req.params.username;
+
+    if (!username) {
+      return res.status(400).json({ error: 'Username is required' });
+    }
+
+    const [unlocks] = await pool.execute(
+      'SELECT * FROM unlocks WHERE username = ?',
+      [username]
+    );
+
+
+    console.log(`Unlocks retrieved for user: ${username}`, unlocks);
+
+    res.json({ unlocks });
+  } catch (error) {
+    console.error('Unlocks retrieval error:', error);
+    res.status(500).json({ error: 'Database error - unlocks retrieval failed' });
   }
 });
 
@@ -2823,6 +2883,8 @@ server.get(PROXY + '/api/notifications/:username', async (req, res) => {
   try {
     const username = req.params.username;
 
+    console.log(`Fetching notifications for user: ${username}`);
+
     const [notifications] = await pool.execute(
       'SELECT * FROM notifications WHERE username = ? ORDER BY createdAt DESC',
       [username]
@@ -2881,7 +2943,34 @@ async function CreateNotification(type, title, message, category, username, prio
   };
 }
 
-// 
+// get userDat from the database
+server.get(PROXY + '/api/userData/:username', async (req, res) => {
+  try {
+    const username = req.params.username;
+
+    // console.log(`Fetching user data for user: ${username}`);
+
+    const [users] = await pool.execute(
+      'SELECT * FROM userData WHERE username = ?',
+      [username]
+    );
+
+    const user = users[0];
+
+    console.log("User data retrieved:", user.id);
+
+    if (user) {
+      res.json(user);
+    } else {
+      // res.status(404).json({ error: 'User not found' });
+    }
+  } catch (error) {
+    console.error('User data error:', error);
+    res.status(500).json({ error: 'Database error - user data retrieval failed' });
+  }
+});
+
+// Sample new user data structure
 
 //  const newUser = {
 //   loginStatus: true,
@@ -2917,8 +3006,7 @@ async function CreateNotification(type, title, message, category, username, prio
 //   }
 // };
 
-// // Create user in server
-
+// // Create user in server database
 
 server.post(PROXY + '/api/userData', async (req, res) => {
   try {
@@ -2996,7 +3084,9 @@ server.get(PROXY + '/api/purchases/:username', async (req, res) => {
       [username]
     );
 
-    res.json({ success: true, insertId: result.insertId });
+
+
+    res.json({ success: true, purchases });
   } catch (error) {
     console.error('Purchases error:', error);
     res.status(500).json({ error: 'Database error - purchase retrieval failed' });
@@ -3013,7 +3103,7 @@ server.get(PROXY + '/api/redemptions/:username', async (req, res) => {
       [username]
     );
 
-    res.json(redemptions);
+    res.json({ success: true, redemptions });
   } catch (error) {
     console.error('Redemptions error:', error);
     res.status(500).json({ error: 'Database error - redemption logging failed' });
@@ -3129,6 +3219,9 @@ async function checkTransaction(crypto, txHash, walletAddress, amount) {
     return { success: false, error: error.message };
   }
 }
+
+
+// Custom route for recording purchases in the db
 
 server.post(PROXY + '/api/purchases/:username', async (req, res) => {
   try {
@@ -4345,6 +4438,9 @@ server.get(PROXY + '/api/fingerprint/stats', authenticateToken, async (req, res)
 // Global error handler
 server.use((error, req, res, next) => {
   console.error('Global error handler:', error);
+  if (res.headersSent) {
+    return next(error);
+  }
   res.status(500).json({
     error: 'Internal server error',
     message: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
@@ -4357,6 +4453,7 @@ server.use((req, res) => {
 });
 
 const PORT = process.env.PORT || 3001;
+
 server.listen(PORT, async () => {
   try {
     // Test database connection
