@@ -1,0 +1,177 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypto Verification Prototype with Timer</title>
+    <script src="https://cdnjs.cloudflare.com"></script>
+     <!-- 1. Include the qrcode.js library in your HTML -->
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+    <!-- 2. Create a div element where the QR code will be rendered -->
+    <!-- <div id="qrcode"></div> -->
+
+    <!-- 3. Add the JavaScript code with the correct parameters -->
+  
+
+    <style>
+        body { font-family: sans-serif; max-width: 500px; margin: 20px auto; padding: 20px; line-height: 1.6; background-color: #f4f7f6; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; font-weight: bold; margin-bottom: 5px; }
+        input, select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        .payment-box { background: #fff; border: 1px solid #ddd; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: center; }
+        
+        /* Timer Container */
+        .timer-container { margin: 10px 0; position: relative; display: inline-block; }
+        #timerCanvas { display: block; margin: 0 auto; }
+        
+        #qrcode { display: inline-block; margin: 15px 0; padding: 10px; background: white; border: 1px solid #eee; }
+        .copy-container { display: flex; gap: 5px; margin-top: 10px; }
+        .copy-btn { padding: 10px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        .amount-display { font-size: 1.2em; font-weight: bold; color: #e9bc27; margin: 10px 0; }
+        .amount-display2 { font-size: 1.2em; font-weight: bold; color: #54d334; margin: 10px 0; }
+        .status-msg { height: 20px; margin-top: 10px; font-size: 0.9em; color: #666; }
+    </style>
+</head>
+<body>
+
+    <h2>Account Verification</h2>
+    
+    <div class="form-group">
+        <label for="userWallet">Your Public Wallet Address</label>
+        <input type="text" id="userWallet" placeholder="Enter your address">
+    </div>
+
+    <div class="form-group">
+        <label for="currency">Select Asset</label>
+        <select id="currency" onchange="updatePaymentDetails()">
+            <option value="LTC">Litecoin (LTC)</option>
+            <option value="ETH">Ethereum (ETH)</option>
+            <option value="ETC">Ethereum Classic (ETC)</option>
+        </select>
+    </div>
+
+    <div class="payment-box">
+        <!-- Canvas Timer -->
+        <div class="timer-container">
+            <canvas id="timerCanvas" width="120" height="120"></canvas>
+        </div>
+
+        <p>Send exactly the amount below within 10 minutes:</p>
+        <div class="amount-display" id="amountDisplay1"> <div id="amount1"> </div>  LTC</div>
+        <div class="amount-display2" id="amountDisplay2"> <div id="amount2"> </div>  LTC</div>
+
+        <div id="qrcode"></div>
+
+        <div class="copy-container">
+            <input type="text" id="recipientAddr" value="MTvCqS77pA2pXzWExampleLTC" readonly>
+            <button class="copy-btn" onclick="copyAddress()">Copy</button>
+        </div>
+        <div id="statusMsg" class="status-msg"></div>
+    </div>
+
+    <script type="text/javascript">
+        // The 'text' property within the options object specifies the data to encode.
+        var qrcode = new QRCode(document.getElementById("qrcode"), {
+            text: "https://example.com", // This is the missing piece
+            width: 128,
+            height: 128,
+            colorDark: "#000000",
+            colorLight: "#ffffff",
+            correctLevel: QRCode.CorrectLevel.H // High error correction level
+        });
+
+       
+    </script>
+
+    <script>
+        const recipientAddresses = {
+            LTC: "MTvCqS77pA2pXzWExampleLTC",
+            ETH: "0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
+            ETC: "0x32Be343B94f860124dC4fEe278FDCBD38C102D88"
+        };
+
+        let amount1 =  Math.random();
+        let amount2 = Math.random();
+
+        const predefinedAmounts1 = { LTC: (0.0075*(1 + amount1)).toPrecision(4), ETH: (0.000018*(1 + amount1)).toPrecision(4), ETC: (0.0024*(1 + amount1)).toPrecision(4) };
+        const predefinedAmounts2 = { LTC: (0.0075*(1 + amount2)).toPrecision(4), ETH: (0.000018*(1 + amount2)).toPrecision(4), ETC: (0.0024*(1 + amount2)).toPrecision(4) };
+
+        // --- Timer Logic ---
+        const canvas = document.getElementById('timerCanvas');
+        const ctx = canvas.getContext('2d');
+        const totalTime = 10 * 60; // 10 minutes in seconds
+        let timeLeft = totalTime;
+
+        function drawTimer() {
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2;
+            const radius = 50;
+            const percent = timeLeft / totalTime;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Background Circle
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+            ctx.strokeStyle = '#eee';
+            ctx.lineWidth = 8;
+            ctx.stroke();
+
+            // Progress Ring
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius, -Math.PI / 2, (-Math.PI / 2) + (2 * Math.PI * percent));
+            ctx.strokeStyle = timeLeft < 60 ? '#dc3545' : '#007bff'; // Turn red in last minute
+            ctx.lineWidth = 8;
+            ctx.lineCap = 'round';
+            ctx.stroke();
+
+            // Text (MM:SS)
+            ctx.font = 'bold 18px Arial';
+            ctx.fillStyle = '#333';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            const mins = Math.floor(timeLeft / 60);
+            const secs = timeLeft % 60;
+            ctx.fillText(`${mins}:${secs < 10 ? '0' : ''}${secs}`, centerX, centerY);
+        }
+
+        const timerInterval = setInterval(() => {
+            if (timeLeft <= 0) {
+                clearInterval(timerInterval);
+                document.getElementById('statusMsg').innerText = "Session expired. Please refresh.";
+                document.getElementById('statusMsg').style.color = "red";
+            } else {
+                timeLeft--;
+                drawTimer();
+            }
+        }, 1000);
+
+        // --- Utility Functions ---
+        // let qrcode = new QRCode(document.getElementById("qrcode"), { width: 128, height: 128 });
+
+        function updatePaymentDetails() {
+            const currency = document.getElementById('currency').value;
+            document.getElementById('amountDisplay1').innerText = `${predefinedAmounts1[currency]} ${currency}`;
+            document.getElementById('amountDisplay2').innerText = `${predefinedAmounts2[currency]} ${currency}`;
+            document.getElementById('recipientAddr').value = recipientAddresses[currency];
+            qrcode.clear();
+            qrcode.makeCode(recipientAddresses[currency]);
+        }
+
+        async function copyAddress() {
+            const addr = document.getElementById("recipientAddr").value;
+            const status = document.getElementById("statusMsg");
+            try {
+                await navigator.clipboard.writeText(addr);
+                status.innerText = "Address copied!";
+                setTimeout(() => status.innerText = "", 2000);
+            } catch (err) { status.innerText = "Error copying."; }
+        }
+
+        window.onload = () => { drawTimer(); updatePaymentDetails(); };
+    </script>
+</body>
+</html>
+

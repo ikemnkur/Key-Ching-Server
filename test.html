@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spam Blocker Payment Verification</title>
+    <style>
+        body { font-family: sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; }
+        .payment-section { margin-bottom: 20px; padding: 15px; border: 1px solid #ccc; border-radius: 5px; }
+        label { display: block; margin-bottom: 5px; }
+        input { width: 100%; padding: 8px; margin-bottom: 10px; }
+        button { padding: 10px 15px; background-color: #007bff; color: white; border: none; cursor: pointer; }
+        .status { margin-top: 10px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>Account Creation Verification</h1>
+    <p>To verify you are not a bot, please make two small, back-to-back payments totaling less than **$0.05 USD** each within **10 minutes**.</p>
+    <p>Example: **0.0075 LTC** and **0.0055 LTC** (amounts should be specific based on current exchange rates and will be provided by your backend system).</p>
+
+    <div class="payment-section">
+        <h2>Payment 1: LTC</h2>
+        <p>Send **[backend-generated-amount-1] LTC** to this address:</p>
+        <p><strong>[Your_LTC_Wallet_Address_1]</strong></p>
+        <label for="txid1">After sending, enter Transaction ID:</label>
+        <input type="text" id="txid1" placeholder="Enter Transaction ID 1">
+        <button onclick="verifyPayment(1)">Verify Payment 1</button>
+        <div id="status1" class="status"></div>
+    </div>
+
+    <div class="payment-section">
+        <h2>Payment 2: LTC</h2>
+        <p>Send **[backend-generated-amount-2] LTC** to this address:</p>
+        <p><strong>[Your_LTC_Wallet_Address_2]</strong></p>
+        <label for="txid2">After sending, enter Transaction ID:</label>
+        <input type="text" id="txid2" placeholder="Enter Transaction ID 2">
+        <button onclick="verifyPayment(2)">Verify Payment 2</button>
+        <div id="status2" class="status"></div>
+    </div>
+
+    <button onclick="completeRegistration()" style="background-color: green;">Complete Registration</button>
+    <div id="finalStatus" class="status"></div>
+
+    <script>
+        function verifyPayment(paymentNum) {
+            const txId = document.getElementById(`txid${paymentNum}`).value;
+            const statusDiv = document.getElementById(`status${paymentNum}`);
+            if (txId) {
+                statusDiv.textContent = 'Verifying... (Backend API call needed)';
+                statusDiv.style.color = 'orange';
+                // In a real application, you would make an API call here to your server
+                // The server checks the blockchain for the transaction details.
+                // Example: fetch('/api/verify-payment', { method: 'POST', body: JSON.stringify({ txId: txId, paymentNum: paymentNum }) })
+                // .then(response => response.json())
+                // .then(data => { /* Update status based on server response */ });
+                
+                // For demo purposes:
+                setTimeout(() => {
+                    statusDiv.textContent = 'Verification successful (simulated)!';
+                    statusDiv.style.color = 'green';
+                }, 2000);
+            } else {
+                statusDiv.textContent = 'Please enter a transaction ID.';
+                statusDiv.style.color = 'red';
+            }
+        }
+
+        function completeRegistration() {
+            const finalStatusDiv = document.getElementById('finalStatus');
+            // In a real application, you check if both payments were verified by the backend
+            // For demo purposes, this is a placeholder
+            finalStatusDiv.textContent = 'Checking all requirements... (Backend API call needed)';
+            finalStatusDiv.style.color = 'blue';
+
+            setTimeout(() => {
+                // If backend confirms both payments were made correctly and on time
+                finalStatusDiv.textContent = 'Registration complete!';
+                finalStatusDiv.style.color = 'green';
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
