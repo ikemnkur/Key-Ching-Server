@@ -39,8 +39,8 @@
     <h2>Account Verification</h2>
     
     <div class="form-group">
-        <label for="userWallet">Your Public Wallet Address</label>
-        <input type="text" id="userWallet" placeholder="Enter your address">
+        <label for="userWalletAddress">Your Public Wallet Address</label>
+        <input type="text" id="userWalletAddress" placeholder="Enter your address">
     </div>
 
     <div class="form-group">
@@ -48,7 +48,7 @@
         <select id="currency" onchange="updatePaymentDetails()">
             <option value="LTC">Litecoin (LTC)</option>
             <option value="ETH">Ethereum (ETH)</option>
-            <option value="ETC">Ethereum Classic (ETC)</option>
+            <option value="SOL">Solana (SOL)</option>
         </select>
     </div>
 
@@ -71,6 +71,17 @@
         <div id="statusMsg" class="status-msg"></div>
     </div>
 
+      <div class="form-group">
+        <!-- <label for="currency">Select Asset</label> -->
+        <!-- <select id="currency" onchange="updatePaymentDetails()">
+            <option value="LTC">Litecoin (LTC)</option>
+            <option value="ETH">Ethereum (ETH)</option>
+            <option value="SOL">Ethereum Classic (SOL)</option>
+        </select> -->
+
+        <button id="doneBtn"> Done </button>
+    </div>
+
     <script type="text/javascript">
         // The 'text' property within the options object specifies the data to encode.
         var qrcode = new QRCode(document.getElementById("qrcode"), {
@@ -89,14 +100,14 @@
         const recipientAddresses = {
             LTC: "MTvCqS77pA2pXzWExampleLTC",
             ETH: "0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
-            ETC: "0x32Be343B94f860124dC4fEe278FDCBD38C102D88"
+            SOL: "0x32Be343B94f860124dC4fEe278FDCBD38C102D88"
         };
 
         let amount1 =  Math.random();
         let amount2 = Math.random();
 
-        const predefinedAmounts1 = { LTC: (0.0075*(1 + amount1)).toPrecision(4), ETH: (0.000018*(1 + amount1)).toPrecision(4), ETC: (0.0024*(1 + amount1)).toPrecision(4) };
-        const predefinedAmounts2 = { LTC: (0.0075*(1 + amount2)).toPrecision(4), ETH: (0.000018*(1 + amount2)).toPrecision(4), ETC: (0.0024*(1 + amount2)).toPrecision(4) };
+        const predefinedAmounts1 = { LTC: (0.0075*(1 + amount1)).toPrecision(4), ETH: (0.000018*(1 + amount1)).toPrecision(4), SOL: (0.0024*(1 + amount1)).toPrecision(4) };
+        const predefinedAmounts2 = { LTC: (0.0075*(1 + amount2)).toPrecision(4), ETH: (0.000018*(1 + amount2)).toPrecision(4), SOL: (0.0024*(1 + amount2)).toPrecision(4) };
 
         // --- Timer Logic ---
         const canvas = document.getElementById('timerCanvas');
@@ -171,6 +182,30 @@
         }
 
         window.onload = () => { drawTimer(); updatePaymentDetails(); };
+
+        document.getElementById("doneBtn").onclick = () => {
+            fetch('https://api/auth/verify-account', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    amount1: predefinedAmounts1[document.getElementById('currency').value],
+                    amount2: predefinedAmounts2[document.getElementById('currency').value],
+                    timeLeft: timeLeft,
+                    chain: document.getElementById('currency').value,
+                    address: document.getElementById('userWalletAddress').value,
+                    urlParams: new URLSearchParams(window.location.search).toString()
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Verification response:', data);
+                alert("Verification process completed.");
+            })
+            .catch(error => {
+                console.error('Error during verification:', error);
+                alert("Verification failed. Please try again.");
+            });
+        };
     </script>
 </body>
 </html>

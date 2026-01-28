@@ -1698,6 +1698,281 @@ server.get(PROXY + '/api/analytics', (req, res) => {
   });
 });
 
+// Custom registration route
+server.post(PROXY + '/api/auth/register', async (req, res) => {
+  try {
+    const { username, email, password, firstName, lastName, accountType, birthDate } = req.body;
+
+    // Validate required fields
+    if (!username || !email || !password || !firstName) {
+      return res.status(400).json({
+        success: false,
+        message: 'Username, email, password, and first name are required'
+      });
+    }
+
+    // Check if username already exists
+    const [existingUsers] = await pool.execute(
+      'SELECT id FROM userData WHERE username = ? OR email = ?',
+      [username, email]
+    );
+
+    if (existingUsers.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: 'Username or email already exists'
+      });
+    }
+
+    // Hash the password
+    const saltRounds = 12;
+    const passwordHash = await bcrypt.hash(password, saltRounds);
+
+    // Helper function to convert ISO datetime to MySQL format
+    const formatDateTimeForMySQL = (dateTime) => {
+      if (!dateTime) return null;
+      if (typeof dateTime === 'string') {
+        return new Date(dateTime).toISOString().slice(0, 19).replace('T', ' ');
+      }
+      if (typeof dateTime === 'number') {
+        return new Date(dateTime).toISOString().slice(0, 19).replace('T', ' ');
+      }
+      return null;
+    };
+
+    // Generate a unique ID (since the schema uses VARCHAR(10))
+    const generateId = () => {
+      return Math.random().toString(36).substring(2, 12).toUpperCase();
+    };
+
+    const userId = generateId();
+    const currentTime = Date.now();
+    const currentDateTime = formatDateTimeForMySQL(new Date());
+     const amount1 = Math.random().toFixed(8);
+     const amount2 = Math.random().toFixed(8);
+
+    const newUser = {
+      id: userId,
+      loginStatus: true,
+      lastLogin: currentDateTime,
+      accountType: accountType || 'buyer',
+      username: username,
+      email: email,
+      firstName: firstName,
+      lastName: lastName || '',
+      phoneNumber: '',
+      birthDate: birthDate || null,
+      encryptionKey: `enc_key_${Date.now()}`,
+      credits: 100, // Starting credits
+      reportCount: 0,
+      isBanned: false,
+      banReason: '',
+      banDate: null,
+      banDuration: null,
+      createdAt: currentTime,
+      updatedAt: currentTime,
+      passwordHash: passwordHash,
+      twoFactorEnabled: false,
+      twoFactorSecret: '',
+      recoveryCodes: [],
+      profilePicture: `https://i.pravatar.cc/150?img=${Math.floor(Math.random() * 70) + 1}`,
+      bio: '',
+      socialLinks: {}
+    };
+
+    await pool.execute(
+      'INSERT INTO userData (id, loginStatus, lastLogin, accountType, username, email, firstName, lastName, phoneNumber, birthDate, encryptionKey, credits, reportCount, isBanned, banReason, banDate, banDuration, createdAt, updatedAt, passwordHash, twoFactorEnabled, twoFactorSecret, recoveryCodes, profilePicture, bio, socialLinks, verification, amount1, amount2) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        newUser.id,
+        newUser.loginStatus,
+        newUser.lastLogin,
+        newUser.accountType,
+        newUser.username,
+        newUser.email,
+        newUser.firstName,
+        newUser.lastName,
+        newUser.phoneNumber,
+        newUser.birthDate,
+        newUser.encryptionKey,
+        newUser.credits,
+        newUser.reportCount,
+        newUser.isBanned,
+        newUser.banReason,
+        formatDateTimeForMySQL(newUser.banDate),
+        newUser.banDuration,
+        newUser.createdAt,
+        newUser.updatedAt,
+        newUser.passwordHash,
+        newUser.twoFactorEnabled,
+        newUser.twoFactorSecret,
+        JSON.stringify(newUser.recoveryCodes),
+        newUser.profilePicture,
+        newUser.bio,
+        JSON.stringify(newUser.socialLinks),
+        "false",
+        amount1,
+        amount2
+      ]
+    );
+
+
+
+    // Generate token for automatic login
+    // TODO: implementation of JWT here
+    const token = jwt.sign({
+        id: newUser.id,
+        email: newUser.email,
+        username: newUser.username,  // Add this line
+        credits: newUser.credits
+    }, process.env.JWT_SECRET, { expiresIn: '2h' });
+    
+    // const token = Buffer.from(`${userId}_${Date.now()}_${Math.random()}`).toString('base64');
+
+    // Return user data without password hash
+    const userData = { ...newUser };
+    delete userData.passwordHash;
+
+    res.status(201).json({
+      success: true,
+      user: userData,
+      token: token,
+      verification: {
+        verified: false,
+        amount1: amount1,
+        amount2: amount2,
+        // timeLeft: null,
+        // chain: null,
+        // address: null
+      },
+      message: 'Account created successfully'
+    });
+
+    const msg = {
+      to: newUser.email,
+      from: process.env.FROM_EMAIL,
+      subject: 'Welcome to Key-Ching! 🎉',
+      text: 'Please confirm your email to get started with Key-Ching.',
+      html: `Here is your confirmation email. Welcome aboard, ${newUser.firstName}!
+      <br><br>
+      We are thrilled to have you join the Key-Ching community. Your account has been successfully created with the username: <strong>${newUser.username}</strong>.
+      <br><br>
+      To get started, please verify your email address by clicking the link below:
+      <br><br>
+      <a href="https://key-ching.com/verify-email?email=${encodeURIComponent(newUser.email)}">Verify Email Address</a>
+      <br><br>
+      If you did not sign up for a Key-Ching account, please ignore this email.
+      <br><br>
+      Best regards,
+      <br>
+      The Key-Ching Team`
+    };
+
+    // Send email with error handling
+    try {
+      await sgMail.send(msg);
+      console.log(`✅ Email sent to ${msg.to}`);
+    } catch (emailError) {
+      console.error('⚠️ Failed to send welcome email:', emailError.message);
+      // Don't fail the registration if email fails
+    }
+
+
+  } catch (error) {
+    console.error('Registration error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error occurred during registration'
+    });
+  }
+});
+
+// Custom authentication route
+server.post(PROXY + '/api/auth/verify-account', async (req, res) => {
+  try {
+
+    // check the crypto payment data 
+
+    const { amount1, amount2, timeLeft, chain, address, urlParams } = req.body;
+
+    const params = new URLSearchParams(urlParams);
+    // const address = params.get('address');
+
+    console.log('Verification request data:', { amount1, amount2, timeLeft, chain, address });
+    console.log('URL Parameters:', params.forEach((value, key) => {
+      console.log(`${key}: ${value}`);
+    }));
+
+    let rows = [];
+    let limit = 10;
+    // const { address, limit = 10 } = req.body;
+
+    if (!amount1 || !amount2 || !timeLeft || !chain || !address || !urlParams) {
+      return res.status(400).json({
+        success: false,
+        message: 'All fields are required for verification'
+      });
+    }
+
+
+    let checkTransactionAmount1 = parseFloat(amount1);
+    let checkTransactionAmount2 = parseFloat(amount2);
+
+    if (chain === 'BTC') rows = await fetchEsploraAddressTxs(BTC_ESPLORA, address, limit);
+    else if (chain === 'LTC') rows = await fetchEsploraAddressTxs(LTC_ESPLORA, address, limit);
+    else if (chain === 'ETH') rows = await fetchEth({ address, limit, chainId: 1, action: "txlist", extraParams: {} });
+    else if (chain === 'SOL') rows = await fetchSol(address, limit);
+
+    // Here you would typically verify the payment details with your payment gateway
+
+    tx1Found = false;
+    tx2Found = false;
+
+    rows.forEach(tx => {
+      console.log(`Transaction found: ${tx.txid || tx.hash} with amount: ${tx.amount || tx.value}`);
+      let txAmount = parseFloat(tx.amount || tx.value);
+      if (txAmount === checkTransactionAmount1) {
+        checkTransactionAmount1 = txAmount;
+        tx1Found = true;
+      }
+      if (txAmount === checkTransactionAmount2) {
+        checkTransactionAmount2 = txAmount;
+        tx2Found = true;
+      }
+    });
+
+    // For demonstration, we'll assume verification is successful if amount1 and amount2 are equal
+    if (!tx1Found || !tx2Found) {
+
+      const [result] = await pool.execute(
+        'UPDATE userData SET verification = ? WHERE email = ?',
+        ["false", params.get('email')]
+      );
+
+      return res.status(400).json({
+        success: false,
+        message: 'Payment amounts do not match, Account verification failed'
+      });
+    }
+
+    const [result] = await pool.execute(
+      'UPDATE userData SET verification = ? WHERE email = ?',
+      ["true", params.get('email')]);
+
+    res.json({
+      success: true,
+      user: userData,
+      message: 'Account verified successfully'
+    });
+
+  } catch (error) {
+    console.error('Token verification error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error occurred during token verification'
+    });
+  }
+});
+
 // Custom authentication route
 server.post(PROXY + '/api/auth/login', async (req, res) => {
   try {
@@ -1839,7 +2114,7 @@ server.post(PROXY + '/api/auth/login', async (req, res) => {
 
 // Custom fetch account details route
 server.post(PROXY + '/api/user', authenticateToken, async (req, res) => {
-// server.post(PROXY + '/api/user', async (req, res) => {
+  // server.post(PROXY + '/api/user', async (req, res) => {
   console.log("Fetching user details...");
   try {
     const { email, username, password } = req.body;
@@ -1951,172 +2226,7 @@ server.post(PROXY + '/api/user', authenticateToken, async (req, res) => {
   }
 });
 
-// Custom registration route
-server.post(PROXY + '/api/auth/register', async (req, res) => {
-  try {
-    const { username, email, password, firstName, lastName, accountType, birthDate } = req.body;
 
-    // Validate required fields
-    if (!username || !email || !password || !firstName) {
-      return res.status(400).json({
-        success: false,
-        message: 'Username, email, password, and first name are required'
-      });
-    }
-
-    // Check if username already exists
-    const [existingUsers] = await pool.execute(
-      'SELECT id FROM userData WHERE username = ? OR email = ?',
-      [username, email]
-    );
-
-    if (existingUsers.length > 0) {
-      return res.status(409).json({
-        success: false,
-        message: 'Username or email already exists'
-      });
-    }
-
-    // Hash the password
-    const saltRounds = 12;
-    const passwordHash = await bcrypt.hash(password, saltRounds);
-
-    // Helper function to convert ISO datetime to MySQL format
-    const formatDateTimeForMySQL = (dateTime) => {
-      if (!dateTime) return null;
-      if (typeof dateTime === 'string') {
-        return new Date(dateTime).toISOString().slice(0, 19).replace('T', ' ');
-      }
-      if (typeof dateTime === 'number') {
-        return new Date(dateTime).toISOString().slice(0, 19).replace('T', ' ');
-      }
-      return null;
-    };
-
-    // Generate a unique ID (since the schema uses VARCHAR(10))
-    const generateId = () => {
-      return Math.random().toString(36).substring(2, 12).toUpperCase();
-    };
-
-    const userId = generateId();
-    const currentTime = Date.now();
-    const currentDateTime = formatDateTimeForMySQL(new Date());
-
-    const newUser = {
-      id: userId,
-      loginStatus: true,
-      lastLogin: currentDateTime,
-      accountType: accountType || 'buyer',
-      username: username,
-      email: email,
-      firstName: firstName,
-      lastName: lastName || '',
-      phoneNumber: '',
-      birthDate: birthDate || null,
-      encryptionKey: `enc_key_${Date.now()}`,
-      credits: 100, // Starting credits
-      reportCount: 0,
-      isBanned: false,
-      banReason: '',
-      banDate: null,
-      banDuration: null,
-      createdAt: currentTime,
-      updatedAt: currentTime,
-      passwordHash: passwordHash,
-      twoFactorEnabled: false,
-      twoFactorSecret: '',
-      recoveryCodes: [],
-      profilePicture: `https://i.pravatar.cc/150?img=${Math.floor(Math.random() * 70) + 1}`,
-      bio: '',
-      socialLinks: {}
-    };
-
-    const [result] = await pool.execute(
-      'INSERT INTO userData (id, loginStatus, lastLogin, accountType, username, email, firstName, lastName, phoneNumber, birthDate, encryptionKey, credits, reportCount, isBanned, banReason, banDate, banDuration, createdAt, updatedAt, passwordHash, twoFactorEnabled, twoFactorSecret, recoveryCodes, profilePicture, bio, socialLinks) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [
-        newUser.id,
-        newUser.loginStatus,
-        newUser.lastLogin,
-        newUser.accountType,
-        newUser.username,
-        newUser.email,
-        newUser.firstName,
-        newUser.lastName,
-        newUser.phoneNumber,
-        newUser.birthDate,
-        newUser.encryptionKey,
-        newUser.credits,
-        newUser.reportCount,
-        newUser.isBanned,
-        newUser.banReason,
-        formatDateTimeForMySQL(newUser.banDate),
-        newUser.banDuration,
-        newUser.createdAt,
-        newUser.updatedAt,
-        newUser.passwordHash,
-        newUser.twoFactorEnabled,
-        newUser.twoFactorSecret,
-        JSON.stringify(newUser.recoveryCodes),
-        newUser.profilePicture,
-        newUser.bio,
-        JSON.stringify(newUser.socialLinks)
-      ]
-    );
-
-
-
-    // Generate token for automatic login
-    const token = Buffer.from(`${userId}_${Date.now()}_${Math.random()}`).toString('base64');
-
-    // Return user data without password hash
-    const userData = { ...newUser };
-    delete userData.passwordHash;
-
-    res.status(201).json({
-      success: true,
-      user: userData,
-      token: token,
-      message: 'Account created successfully'
-    });
-
-    const msg = {
-      to: newUser.email,
-      from: process.env.FROM_EMAIL,
-      subject: 'Welcome to Key-Ching! 🎉',
-      text: 'Please confirm your email to get started with Key-Ching.',
-      html: `Here is your confirmation email. Welcome aboard, ${newUser.firstName}!
-      <br><br>
-      We are thrilled to have you join the Key-Ching community. Your account has been successfully created with the username: <strong>${newUser.username}</strong>.
-      <br><br>
-      To get started, please verify your email address by clicking the link below:
-      <br><br>
-      <a href="https://key-ching.com/verify-email?email=${encodeURIComponent(newUser.email)}">Verify Email Address</a>
-      <br><br>
-      If you did not sign up for a Key-Ching account, please ignore this email.
-      <br><br>
-      Best regards,
-      <br>
-      The Key-Ching Team`
-    };
-
-    // Send email with error handling
-    try {
-      await sgMail.send(msg);
-      console.log(`✅ Email sent to ${msg.to}`);
-    } catch (emailError) {
-      console.error('⚠️ Failed to send welcome email:', emailError.message);
-      // Don't fail the registration if email fails
-    }
-
-
-  } catch (error) {
-    console.error('Registration error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error occurred during registration'
-    });
-  }
-});
 
 // Email verification 
 // email-service.js
