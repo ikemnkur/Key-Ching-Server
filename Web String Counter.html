@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>String Instance Counter</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; line-height: 1.6; }
+        input, textarea { width: 100%; margin-bottom: 10px; padding: 8px; }
+        button { padding: 10px 20px; cursor: pointer; background: #007bff; color: white; border: none; }
+        pre { background: #f4f4f4; padding: 15px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h2>String Instance Counter</h2>
+    
+    <label>Target URL:</label>
+    <input type="text" id="urlInput" placeholder="https://example.com" value="https://en.wikipedia.org">
+    
+    <label>Search Terms (comma separated):</label>
+    <input type="text" id="termsInput" placeholder="dog, cat, 34567" value="dog, cat, 34567">
+    
+    <button onclick="processData()">Analyze Page</button>
+
+    <h3>Output:</h3>
+    <pre id="output">Results will appear here...</pre>
+
+    <script>
+        async function processData() {
+            const url = document.getElementById('urlInput').value;
+            const terms = document.getElementById('termsInput').value.split(',').map(s => s.trim());
+            const output = document.getElementById('output');
+            
+            output.textContent = "Fetching data... please wait.";
+
+            try {
+                // Using AllOrigins proxy to bypass CORS restrictions
+                const proxyUrl = `https://api.allorigins.win{encodeURIComponent(url)}`;
+                const response = await fetch(proxyUrl);
+                
+                if (!response.ok) throw new Error("Network response was not ok.");
+                
+                const data = await response.json();
+                const textData = data.contents; // This is the raw HTML/Text from the URL
+
+                // Map search terms to their occurrence counts
+                const results = {};
+                terms.forEach(term => {
+                    if (term === "") return;
+                    // Use regex with 'g' (global) and 'i' (case-insensitive) flags
+                    const regex = new RegExp(term, 'gi');
+                    const matches = textData.match(regex);
+                    results[term] = matches ? matches.length : 0;
+                });
+
+                output.textContent = JSON.stringify(results, null, 4);
+            } catch (error) {
+                output.textContent = "Error: " + error.message + "\n(Note: Some sites block proxy access.)";
+            }
+        }
+    </script>
+</body>
+</html>

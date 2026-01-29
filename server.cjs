@@ -1748,8 +1748,8 @@ server.post(PROXY + '/api/auth/register', async (req, res) => {
     const userId = generateId();
     const currentTime = Date.now();
     const currentDateTime = formatDateTimeForMySQL(new Date());
-     const amount1 = Math.random().toFixed(8);
-     const amount2 = Math.random().toFixed(8);
+    const amount1 = Math.random().toFixed(8);
+    const amount2 = Math.random().toFixed(8);
 
     const newUser = {
       id: userId,
@@ -1820,12 +1820,12 @@ server.post(PROXY + '/api/auth/register', async (req, res) => {
     // Generate token for automatic login
     // TODO: implementation of JWT here
     const token = jwt.sign({
-        id: newUser.id,
-        email: newUser.email,
-        username: newUser.username,  // Add this line
-        credits: newUser.credits
+      id: newUser.id,
+      email: newUser.email,
+      username: newUser.username,  // Add this line
+      credits: newUser.credits
     }, process.env.JWT_SECRET, { expiresIn: '2h' });
-    
+
     // const token = Buffer.from(`${userId}_${Date.now()}_${Math.random()}`).toString('base64');
 
     // Return user data without password hash

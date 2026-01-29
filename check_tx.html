@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Litecoin Transaction Checker</title>
+    <style>
+        body { font-family: sans-serif; max-width: 600px; margin: 20px auto; padding: 0 10px; }
+        input, button { padding: 10px; margin-top: 10px; width: 100%; box-sizing: border-box; }
+        #result { margin-top: 20px; padding: 15px; border: 1px solid #ccc; background-color: #f9f9f9; white-space: pre-wrap; word-wrap: break-word; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <h1>Litecoin Transaction Checker</h1>
+    <p>Enter your Litecoin address and the transaction hash to confirm details.</p>
+
+    <label for="myAddress">Your Litecoin Address:</label>
+    <input type="text" id="myAddress" placeholder="e.g., Lh5k4X... or ltc1... ">
+
+    <label for="txHash">Transaction Hash (TXID):</label>
+    <input type="text" id="txHash" placeholder="e.g., a1b2c3d4... ">
+
+    <button onclick="getTransactionDetails()">Check Transaction</button>
+
+    <div id="result"></div>
+
+    <script>
+        async function getTransactionDetails() {
+            const myAddress = document.getElementById('myAddress').value.trim();
+            const txHash = document.getElementById('txHash').value.trim();
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = 'Fetching details...';
+
+            if (!myAddress || !txHash) {
+                resultDiv.innerHTML = '<p class="error">Please enter both your address and the transaction hash.</p>';
+                return;
+            }
+
+            // Using SoChain API to get transaction details by hash
+            const apiUrl = `https://chain.so{txHash}`;
+
+            try {
+                const response = await fetch(apiUrl);
+                if (!response.ok) {
+                    throw new Error(`API error: ${response.statusText}`);
+                }
+                const data = await response.json();
+
+                if (data.status === 'fail') {
+                    throw new Error(data.data.error_message || 'Transaction not found or API error.');
+                }
+
+                const transaction = data.data.tx;
+                const time = new Date(transaction.time * 1000).toLocaleString();
+                let senderAddress = 'Unknown Sender';
+                let amountReceived = 0;
+
+                // Find the output that goes to your address
+                for (const output of transaction.outputs) {
+                    if (output.address === myAddress) {
+                        amountReceived = parseFloat(output.value);
+                        break; // Found the relevant output
+                    }
+                }
+
+                // In Bitcoin-based chains, the "sender" is typically the input address.
+                // A transaction can have multiple inputs (senders) and outputs (receivers).
+                // If it's a simple 1-to-1 transaction, we can identify the primary sender.
+                // For simplicity here, we can say the amount was *received* from an input.
+                // To get the actual input address, we'd need more complex logic or a different API call.
+                // A block explorer view handles this complexity well.
+
+                // For a specific sender address lookup, a block explorer website is generally more user-friendly.
+                // We'll focus on the info we can easily extract here.
+
+                if (amountReceived > 0) {
+                    resultDiv.innerHTML = `
+                        <p><strong>Transaction Found!</strong></p>
+                        <p><strong>Status:</strong> Confirmed in block ${transaction.block_no}</p>
+                        <p><strong>Amount Received at Your Address:</strong> ${amountReceived} LTC</p>
+                        <p><strong>Time:</strong> ${time}</p>
+                        <p><strong>Note:</strong> A single transaction can have multiple inputs/outputs. To see all sender/receiver addresses, use a block explorer.</p>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `<p class="error">The specified address was not a recipient in this transaction, or the amount was 0.</p>`;
+                }
+
+            } catch (error) {
+                resultDiv.innerHTML = `<p class="error">Error: ${error.message}</p>`;
+                console.error(error);
+            }
+        }
+    </script>
+</body>
+</html>
