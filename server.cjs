@@ -1748,8 +1748,61 @@ server.post(PROXY + '/api/auth/register', async (req, res) => {
     const userId = generateId();
     const currentTime = Date.now();
     const currentDateTime = formatDateTimeForMySQL(new Date());
-    const amount1 = Math.random().toFixed(8);
-    const amount2 = Math.random().toFixed(8);
+
+    // gerate two small random amounts for verification above 10 cents USD, less than 20 cents.
+    const amount1 = (0.1 * parseFloat(Math.random().toFixed(8)) + 0.1).toPrecision(4);
+    const amount2 = (0.1 * parseFloat(Math.random().toFixed(8)) + 0.1).toPrecision(4);
+
+    const currencyIdMap = {
+      BTC: 'bitcoin',
+      ETH: 'ethereum',
+      LTC: 'litecoin',
+      SOL: 'solana',
+      // XMR: 'monero',
+      // XRP: 'ripple'
+    };
+
+    // Fetch crypto rate from CoinGecko API
+    const fetchCryptoRate = async (cryptoCurrency) => {
+      try {
+        const coinId = currencyIdMap[cryptoCurrency];
+        if (!coinId) {
+          console.error('Currency not supported:', cryptoCurrency);
+          return 0;
+        }
+
+        const response = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`);
+        const data = await response.json();
+        return data[coinId]?.usd || 0;
+      } catch (error) {
+        console.error('Error fetching crypto rate:', error);
+        // Fallback rates for demo
+        const fallbackRates = { BTC: 45000, ETH: 3000, LTC: 100, SOL: 50, XMR: 150, XRP: 0.5 };
+        return fallbackRates[cryptoCurrency] || 0;
+      }
+    };
+
+
+
+    // conver random amounts to crypto amounts based on current rates 
+    const btcRate = await fetchCryptoRate('BTC');
+    const ethRate = await fetchCryptoRate('ETH');
+    const ltcRate = await fetchCryptoRate('LTC');
+    const solRate = await fetchCryptoRate('SOL');
+    // const xmrRate = await fetchCryptoRate('XMR');
+    // const xrpRate = await fetchCryptoRate('XRP');
+    const amount1BTC = (amount1 / btcRate).toFixed(8);
+    const amount2BTC = (amount2 / btcRate).toFixed(8);
+    const amount1ETH = (amount1 / ethRate).toFixed(8);
+    const amount2ETH = (amount2 / ethRate).toFixed(8);
+    const amount1LTC = (amount1 / ltcRate).toFixed(8);
+    const amount2LTC = (amount2 / ltcRate).toFixed(8);
+    const amount1SOL = (amount1 / solRate).toFixed(8);
+    const amount2SOL = (amount2 / solRate).toFixed(8);
+    // const amount1XMR = (amount1 / xmrRate).toFixed(8);
+    // const amount2XMR = (amount2 / xmrRate).toFixed(8);
+    // const amount1XRP = (amount1 / xrpRate).toFixed(8);
+    // const amount2X
 
     const newUser = {
       id: userId,
@@ -1840,7 +1893,13 @@ server.post(PROXY + '/api/auth/register', async (req, res) => {
         verified: false,
         amount1: amount1,
         amount2: amount2,
-        // timeLeft: null,
+        cryptoAmounts: {
+          BTC: { amount1: amount1BTC, amount2: amount2BTC },
+          ETH: { amount1: amount1ETH, amount2: amount2ETH },
+          LTC: { amount1: amount1LTC, amount2: amount2LTC },
+          SOL: { amount1: amount1SOL, amount2: amount2SOL }
+        },
+        time: new Date().getTime(),
         // chain: null,
         // address: null
       },
@@ -1886,92 +1945,231 @@ server.post(PROXY + '/api/auth/register', async (req, res) => {
   }
 });
 
+const convertCryptoTXamountIntoUSD = (chain, txAmount) => {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const currencyIdMap = {
+        BTC: 'bitcoin',
+        ETH: 'ethereum',
+        LTC: 'litecoin',
+        SOL: 'solana',
+      };
+
+      const coinId = currencyIdMap[chain];
+      if (!coinId) {
+        console.error('Currency not supported for conversion:', chain);
+        return resolve(0);
+      }
+
+      const response = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`);
+      const data = await response.json();
+      const rate = data[coinId]?.usd || 0;
+      const usdAmount = txAmount * rate;
+      resolve(usdAmount);
+    } catch (error) {
+      console.error('Error converting crypto amount to USD:', error);
+      resolve(0);
+    }
+  });
+}
+
+
 // Custom authentication route
 server.post(PROXY + '/api/auth/verify-account', async (req, res) => {
   try {
 
     // check the crypto payment data 
 
-    const { amount1, amount2, timeLeft, chain, address, urlParams } = req.body;
+    const { email, username, timeLeft, chain, address, transactionId, urlParams } = req.body;
 
     const params = new URLSearchParams(urlParams);
-    // const address = params.get('address');
 
-    console.log('Verification request data:', { amount1, amount2, timeLeft, chain, address });
-    console.log('URL Parameters:', params.forEach((value, key) => {
-      console.log(`${key}: ${value}`);
-    }));
+    const hash = transactionId
+
+    console.log('Verification request data:', { email, username, timeLeft, chain, address, hash });
+
+    // console.log('URL Parameters:', params.forEach((value, key) => {
+    //   console.log(`${key}: ${value}`);
+    // }));
 
     let rows = [];
     let limit = 10;
-    // const { address, limit = 10 } = req.body;
 
-    if (!amount1 || !amount2 || !timeLeft || !chain || !address || !urlParams) {
+
+    if (!timeLeft || !chain || !address || !email || !username || !hash) {
+      // if (!timeLeft || !chain || !email || !username) {
       return res.status(400).json({
         success: false,
         message: 'All fields are required for verification'
       });
     }
 
+    // now pull in userdata from database
+    const [users] = await pool.execute(
+      'SELECT * FROM userData WHERE email = ?',
+      [email]
+    );
 
-    let checkTransactionAmount1 = parseFloat(amount1);
-    let checkTransactionAmount2 = parseFloat(amount2);
+    const userData = users[0];
 
-    if (chain === 'BTC') rows = await fetchEsploraAddressTxs(BTC_ESPLORA, address, limit);
-    else if (chain === 'LTC') rows = await fetchEsploraAddressTxs(LTC_ESPLORA, address, limit);
-    else if (chain === 'ETH') rows = await fetchEth({ address, limit, chainId: 1, action: "txlist", extraParams: {} });
-    else if (chain === 'SOL') rows = await fetchSol(address, limit);
+    if (!userData) {
 
-    // Here you would typically verify the payment details with your payment gateway
+      console.error('User not found for verification:', email);
 
-    tx1Found = false;
-    tx2Found = false;
-
-    rows.forEach(tx => {
-      console.log(`Transaction found: ${tx.txid || tx.hash} with amount: ${tx.amount || tx.value}`);
-      let txAmount = parseFloat(tx.amount || tx.value);
-      if (txAmount === checkTransactionAmount1) {
-        checkTransactionAmount1 = txAmount;
-        tx1Found = true;
-      }
-      if (txAmount === checkTransactionAmount2) {
-        checkTransactionAmount2 = txAmount;
-        tx2Found = true;
-      }
-    });
-
-    // For demonstration, we'll assume verification is successful if amount1 and amount2 are equal
-    if (!tx1Found || !tx2Found) {
-
-      const [result] = await pool.execute(
-        'UPDATE userData SET verification = ? WHERE email = ?',
-        ["false", params.get('email')]
-      );
-
-      return res.status(400).json({
+      return res.status(404).json({
         success: false,
-        message: 'Payment amounts do not match, Account verification failed'
+        message: 'User not found for verification'
       });
     }
 
-    const [result] = await pool.execute(
-      'UPDATE userData SET verification = ? WHERE email = ?',
-      ["true", params.get('email')]);
+    FetchRecentTransactionsCronByChain(chain); // ensure latest TXs are fetched
 
-    res.json({
-      success: true,
-      user: userData,
-      message: 'Account verified successfully'
-    });
+    setTimeout
+      (async () => {
+
+        // console.log('User data for verification:', userData);
+
+        let tx1Found = false;
+        let tx2Found = false;
+
+        let rows;
+
+        // fetch transactions from blockchain explorer APIs
+        if (chain === 'BTC')
+        // try {
+        //   rows = await fetchEsploraAddressTxs(BTC_ESPLORA, address, limit);
+        // } catch (err) {
+        //   console.error('Error fetching live BTC transactions:', err);
+
+        {
+          let result = await pool.execute(
+            'SELECT * FROM CryptoTransactions_BTC WHERE hash = ?',
+            [hash]
+          );
+
+          rows = result[0];
+
+        }
+        // }
+        else if (chain === 'LTC')
+        // try {
+        //   rows = await fetchEsploraAddressTxs(LTC_ESPLORA, address, limit);
+        // } catch (error) {
+        // console.error('Error fetching live LTC transactions:', error);
+
+        {
+          let result = await pool.execute(
+            'SELECT * FROM CryptoTransactions_LTC WHERE hash = ?',
+            [hash]
+          );
+          rows = result[0];
+        }
+        // }
+
+        else if (chain === 'ETH')
+        // try {
+        //   rows = await fetchEth({ address, limit, chainId: 1, action: "txlist", extraParams: {} });
+        //   // rows = await fetchEth({ address, limit, chainId: 1, action: "txlist", extraParams: {} });
+        // } catch (error) {
+        {
+          console.error('Error fetching live ETH transactions:', error);
+
+          let result = await pool.execute(
+            'SELECT * FROM CryptoTransactions_ETH WHERE hash = ?',
+            [hash]
+          );
+          rows = result[0];
+        }
+        // }
+
+        else if (chain === 'SOL')
+        // try {
+        //   rows = await fetchSol(address, limit);
+
+        // } catch (error) {
+        //   console.error('Error fetching live SOL transactions:', error);
+
+        {
+          let result = await pool.execute(
+            'SELECT * FROM CryptoTransactions_SOL WHERE hash = ?',
+            [hash]
+          );
+          rows = result[0];
+        }
+
+
+        // Here you would typically verify the payment details with your payment gateway
+        // Check for match of transaction amounts in the fetched transactions
+        console.log(`Fetched ${rows.length} transactions for address ${address} on chain ${chain}`);
+
+        // console.log ("Rows:", rows);
+
+        // Use for...of loop with await to ensure all conversions complete before verification
+        for (const tx of rows) {
+          console.log('Checking transaction:', tx);
+          console.log(`Transaction found: ${tx.txid || tx.hash} with amount: ${tx.amount || tx.value}`);
+          let txAmount = parseFloat(tx.amount || tx.value);
+
+          const usdAmount = await convertCryptoTXamountIntoUSD(chain, txAmount);
+          console.log(`Converted transaction amount to USD: $${usdAmount.toFixed(4)} VS expected amounts: $${userData.amount1}, $${userData.amount2}`);
+
+          const diff1 = Math.abs(usdAmount - userData.amount1);
+          const diff2 = Math.abs(usdAmount - userData.amount2);
+          
+          console.log(`Transaction amounts within margin of error: $${diff1.toFixed(4)} and $${diff2.toFixed(4)}`);
+
+          // if ther TXs are within a 2.5 cent margin of error, consider them a match
+          if (diff1 < 0.025) {
+            tx1Found = true;
+          }
+          if (diff2 < 0.025) {
+            tx2Found = true;
+          }
+        }
+
+        console.log(`Transaction verification results: tx1Found=${tx1Found}, tx2Found=${tx2Found}`);
+        //  if one of the transactions are not found, return error
+        if (!tx1Found || !tx2Found) {
+
+          const [result] = await pool.execute(
+            'UPDATE userData SET verification = ? WHERE email = ?',
+            ["false", email]
+          );
+
+          console.error('Payment amounts do not match for verification:', { tx1Found, tx2Found });
+
+          return res.status(400).json({
+            success: false,
+            message: 'Payment amounts do not match, Account verification failed'
+          });
+        }
+
+        // if both transactions are found, verify the account
+        const [result] = await pool.execute(
+          'UPDATE userData SET verification = ? WHERE email = ?',
+          ["true", email]);
+
+        console.log('Account verified successfully for user:', email);
+
+        res.json({
+          success: true,
+          user: userData,
+          message: 'Account verified successfully'
+        });
+
+      }, 5000); // wait 5 seconds to ensure TXs are fetched
 
   } catch (error) {
-    console.error('Token verification error:', error);
+    console.error('Account verification error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error occurred during token verification'
+      message: 'Server error occurred during account verification'
     });
   }
 });
+
+
+
 
 // Custom authentication route
 server.post(PROXY + '/api/auth/login', async (req, res) => {
@@ -3532,6 +3730,11 @@ async function fetchEsploraAddressTxs(baseUrl, address, limit = 100) {
     url = `${baseUrl}/address/${address}/txs/chain/${last}`;
   }
 
+  // // print out the last transasction fetched
+  // if (rows.length > 0) {
+  //   console.log("Last transaction fetched:", rows[rows.length - 1]);
+  // }
+
   return rows.slice(0, limit);
 }
 
@@ -3677,7 +3880,8 @@ async function fetchSol(address, limit = 100) {
       amount: fmt((net < 0n ? -net : net).toString(), 9),
       from: direction === 'IN' ? cp : (direction === 'OUT' ? address : null),
       to: direction === 'IN' ? address : (direction === 'OUT' ? cp : null),
-      signature: sig
+      signature: sig,
+      hash: sig
     });
     if (out.length >= limit) break;
   }
@@ -4630,6 +4834,8 @@ cron.schedule('*/30 * * * *', async () => {
 
 });
 
+// FetchRecentTransactionsCron();
+
 async function FetchRecentTransactionsCron() {
   try {
     console.log('🔄 Fetching recent transactions for all wallet addresses...');
@@ -4657,19 +4863,35 @@ async function FetchRecentTransactionsCron() {
         }
         // return res.status(400).json({ error: 'Unsupported chain. Use BTC, LTC, ETH, SOL' });
 
-        // res.json({ chain, address, count: rows.length, txs: rows });
-
-        let txs = {
+        let transactions = {
           chain,
           address,
           count: rows.length,
           txs: rows
         };
-        // console.log(`✅ Fetched ${rows.length} transactions for ${chain} address ${address}`);
 
+        // if (chain === "SOL") {
+        //   console.log("Rows for SOL:", rows);
+        //   // Rows for SOL: [
+        //   //   {
+        //   //     time: '2026-01-30 17:52:45.000 UTC',
+        //   //     direction: 'IN',
+        //   //     amount: '0.299710436',
+        //   //     from: 'EMXJqHznGSnSzeMyigBGQNEFw4EeaNDbj1UwaFTpp3sg',
+        //   //     to: 'qaSpvAumg2L3LLZA8qznFtbrRKYMP1neTGqpNgtCPaU',
+        //   //     signature: 'TfqVnbHXCX6DYpKD59BwjVGqM2Evj6b1Pm7u5UuLVVMgXpn81hEL9AN3aEvDn5F13EfsYxQ3nyHSifzfqhwJoGe',
+        //   //     hash: 'TfqVnbHXCX6DYpKD59BwjVGqM2Evj6b1Pm7u5UuLVVMgXpn81hEL9AN3aEvDn5F13EfsYxQ3nyHSifzfqhwJoGe'
+        //   //   }
+        //   // ]
+        // }
 
-        for (const tx of txs.txs) {
-          const transactionId = tx.hash;
+        for (const tx of transactions.txs) {
+          const transactionId = tx?.hash ?? null;
+
+          if (!transactionId) {
+            console.log(`Skipping ${chain} transaction with missing hash`);
+            continue;
+          }
 
           // console.log(`Time: ${tx.time}, Direction: ${tx.direction}, Amount: ${tx.amount}, From: ${tx.from}, To: ${tx.to}, Hash: ${tx.hash}`);
 
@@ -4684,16 +4906,16 @@ async function FetchRecentTransactionsCron() {
             continue; // Skip to next transaction
           }
 
-          // Insert new transaction
+          // Insert new transaction (convert undefined values to null)
           await pool.execute(
             `INSERT INTO CryptoTransactions_${chain} (time, direction, amount, fromAddress, toAddress, hash) VALUES (?, ?, ?, ?, ?, ?)`,
             [
-              tx.time,
-              tx.direction,
-              tx.amount,
-              tx.from,
-              tx.to,
-              tx.hash,
+              tx?.time ?? null,
+              tx?.direction ?? null,
+              tx?.amount ?? null,
+              tx?.from ?? null,
+              tx?.to ?? null,
+              transactionId,
             ]
           );
 
@@ -4703,10 +4925,11 @@ async function FetchRecentTransactionsCron() {
 
       } catch (e) {
         // res.status(500).json({ error: e.message || String(e) });
-        console.error(`❌ Error processing transactions for ${chain} address ${address}:`, e);
+        // console.error(`❌ Error processing transactions for ${chain} address ${address}:`, e);
+        console.error(`❌ Error processing transactions for ${chain} address ${address}:`, e.message || String(e));
         continue;
       }
-      // console.log(`📈 Recent transactions for ${address}:`, txs);
+
     }
   } catch (error) {
     console.error('❌ Error fetching recent transactions:', error);
@@ -4714,3 +4937,94 @@ async function FetchRecentTransactionsCron() {
 }
 
 
+
+async function FetchRecentTransactionsCronByChain(cryptoChain) {
+  try {
+    console.log(`🔄 Fetching recent transactions for all ${cryptoChain || 'chain'} wallet addresses...`);
+    // Iterate over walletAddressMap entries (key = chain, value = address) for the cron job
+
+    let [chainKey, addr] = walletAddressMap[cryptoChain]
+
+
+    // for (const [chainKey, addr] of Object.entries(walletAddressMap)) {
+    // const txs = await fetchRe,centTransactions(address);
+    const chain = cryptoChain ? cryptoChain : String(chainKey || '').toUpperCase();
+    const address = String(addr || '').trim();
+    // Use a fixed reasonable limit for cron runs
+    const limit = 100;
+    try {
+
+      if (!address || !chain) {
+        console.log('No address or chain provided');
+
+      }
+      let rows = [];
+      if (chain === 'BTC') rows = await fetchEsploraAddressTxs(BTC_ESPLORA, address, limit);
+      else if (chain === 'LTC') rows = await fetchEsploraAddressTxs(LTC_ESPLORA, address, limit);
+      else if (chain === 'ETH') rows = await fetchEth({ address, limit, chainId: 1, action: "txlist", extraParams: {} });
+      else if (chain === 'SOL') rows = await fetchSol(address, limit);
+      else {
+        console.log('Unsupported chain. Use BTC, LTC, ETH, SOL');
+
+      }
+      // return res.status(400).json({ error: 'Unsupported chain. Use BTC, LTC, ETH, SOL' });
+
+      let transactions = {
+        chain,
+        address,
+        count: rows.length,
+        txs: rows
+      };
+
+      for (const tx of transactions.txs) {
+        const transactionId = tx?.hash ?? null;
+
+        if (!transactionId) {
+          console.log(`Skipping ${chain} transaction with missing hash`);
+          continue;
+        }
+
+        // todo: only process transactions within last 30 minutes?
+        const txTime = new Date(tx?.time ?? 0);
+        const now = new Date();
+
+        const [existingTxs] = await pool.execute(
+          `SELECT * FROM CryptoTransactions_${chain} WHERE hash = ? and time >= ?`,
+          [transactionId, new Date(now.getTime() - 30 * 60000)]
+        );
+
+        // Check if transaction already exists
+        if (existingTxs.length > 0) {
+          // console.log(`Transaction ${transactionId} already exists in the database. Skipping.`);
+          continue; // Skip to next transaction
+        }
+
+        // Insert new transaction (convert undefined values to null)
+        await pool.execute(
+          `INSERT INTO CryptoTransactions_${chain} (time, direction, amount, fromAddress, toAddress, hash) VALUES (?, ?, ?, ?, ?, ?)`,
+          [
+            tx?.time ?? null,
+            tx?.direction ?? null,
+            tx?.amount ?? null,
+            tx?.from ?? null,
+            tx?.to ?? null,
+            transactionId,
+          ]
+        );
+
+        // console.log(`Inserted transaction ${transactionId} into CryptoTransactions_${chain}`);
+      }
+
+
+    } catch (e) {
+      // res.status(500).json({ error: e.message || String(e) });
+      // console.error(`❌ Error processing transactions for ${chain} address ${address}:`, e);
+      console.error(`❌ Error processing transactions for ${chain} address ${address}:`, e.message || String(e));
+
+    }
+
+    // }
+  } catch (error) {
+    console.error('❌ Error fetching recent transactions:', error);
+  }
+}
